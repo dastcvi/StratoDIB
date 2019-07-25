@@ -3,10 +3,10 @@
  *  Author:  Alex St. Clair
  *  Created: July 2019
  *  
- *  This file implements the RACHuTS safety mode.
+ *  This file implements the FLOATS safety mode.
  */
 
-#include "StratoPIB.h"
+#include "StratoDIB.h"
 
 enum SAStates_t : uint8_t {
     SA_ENTRY = MODE_ENTRY,
@@ -20,7 +20,7 @@ enum SAStates_t : uint8_t {
     SA_EXIT = MODE_EXIT
 };
 
-void StratoPIB::SafetyMode()
+void StratoDIB::SafetyMode()
 {
     switch (inst_substate) {
     case SA_ENTRY:

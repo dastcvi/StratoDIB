@@ -1,5 +1,5 @@
 /*
- *  PIBBufferGuard.h
+ *  DIBBufferGuard.h
  *  Author:  Alex St. Clair
  *  Created: July 2019
  *  
@@ -43,7 +43,7 @@
 
 #ifndef SERIAL3_RX_BUFFER_SIZE
 #error "Need to redefine the Serial3 buffer size to 4096"
-#elif SERIAL3_RX_BUFFER_SIZE != 4096 // todo: optimize this for PU
+#elif SERIAL3_RX_BUFFER_SIZE != 64 // todo: optimize this for PU
 #error "Serial3 buffer should be 64 bytes"
 #endif
 

@@ -1,21 +1,21 @@
 /*
- *  StratoPIB.h
+ *  StratoDIB.h
  *  Author:  Alex St. Clair
  *  Created: July 2019
  *  
  *  This file declares an Arduino library (C++ class) that inherits
  *  from the StratoCore class. It serves as the overarching class
- *  for the RACHuTS Profiler Interface Board, or PIB.
+ *  for the FLOATS Data Interface Board, or DIB.
  */
 
-#ifndef STRATOPIB_H
-#define STRATOPIB_H
+#ifndef StratoDIB_H
+#define StratoDIB_H
 
 #include "StratoCore.h"
-#include "PIBHardware.h"
-#include "PIBBufferGuard.h"
+#include "DIBHardware.h"
+#include "DIBBufferGuard.h"
 
-#define INSTRUMENT      RACHUTS
+#define INSTRUMENT      FLOATS
 
 // number of loops before a flag becomes stale and is reset
 #define FLAG_STALE      2
@@ -29,13 +29,15 @@ enum ScheduleAction_t : uint8_t {
     COMMAND_REEL_OUT,
     COMMAND_REEL_IN,
     COMMAND_MOTION_STOP,
+    START_FTR,
+    STOP_FTR,
     NUM_ACTIONS
 };
 
-class StratoPIB : public StratoCore {
+class StratoDIB : public StratoCore {
 public:
-    StratoPIB();
-    ~StratoPIB() { };
+    StratoDIB();
+    ~StratoDIB() { };
 
     // called before the loop begins
     void InstrumentSetup();
@@ -87,6 +89,12 @@ private:
     void WatchFlags();
 
     ActionFlag_t action_flags[NUM_ACTIONS] = {{0}}; // initialize all flags to false
+
+    void FTRon();
+    void FTRoff();
+
+    uint16_t ftr_on_time = 300; // 5 min
+    uint16_t ftr_cycle_time = 1500; // 25 min
 };
 
-#endif /* STRATOPIB_H */
+#endif /* StratoDIB_H */

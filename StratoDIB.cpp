@@ -1,16 +1,16 @@
 /*
- *  StratoPIB.cpp
+ *  StratoDIB.cpp
  *  Author:  Alex St. Clair
  *  Created: July 2019
  *  
  *  This file implements an Arduino library (C++ class) that inherits
  *  from the StratoCore class. It serves as the overarching class
- *  for the RACHuTS Profiler Interface Board, or PIB.
+ *  for the FLOATS Data Interface Board, or DIB.
  */
 
-#include "StratoPIB.h"
+#include "StratoDIB.h"
 
-StratoPIB::StratoPIB()
+StratoDIB::StratoDIB()
     : StratoCore(&ZEPHYR_SERIAL, INSTRUMENT)
     , mcbTX(&MCB_SERIAL, &Serial)
     , mcbRX(&MCB_SERIAL, &Serial, DIB) // note: MCB expects DIB due to hard-coded Reader/Writer functions
@@ -21,7 +21,7 @@ StratoPIB::StratoPIB()
     mcb_motion_finished = false;
 }
 
-void StratoPIB::InstrumentSetup()
+void StratoDIB::InstrumentSetup()
 {
     // for RS232 transceiver
     pinMode(FORCEOFF_232, OUTPUT);
@@ -32,47 +32,34 @@ void StratoPIB::InstrumentSetup()
     // safe pin required by Zephyr
     pinMode(SAFE_PIN, OUTPUT);
     digitalWrite(SAFE_PIN, LOW);
+
+    // FTR power pin (HIGH = OFF)
+    pinMode(FTR_POWER, OUTPUT);
+    digitalWrite(FTR_POWER, HIGH);
 }
 
-void StratoPIB::InstrumentLoop()
+void StratoDIB::InstrumentLoop()
 {
     WatchFlags();
 }
 
 // The telecommand handler must return ACK/NAK
-bool StratoPIB::TCHandler(Telecommand_t telecommand)
+bool StratoDIB::TCHandler(Telecommand_t telecommand)
 {
     String dbg_msg = "";
 
     switch (telecommand) {
-    case DEPLOYx:
-        deploy_length = mcbParam.deployLen;
-        SetAction(COMMAND_REEL_OUT); // will be ignored if wrong mode
+    case FTRONTIME:
+        ftr_on_time = dibParam.ftrOnTime;
+        dbg_msg = "Set on time to ";
+        dbg_msg += String(ftr_on_time);
+        ZephyrLogFine(dbg_msg.c_str());
         break;
-    case DEPLOYv:
-        mcbTX.deployV(mcbParam.deployVel); // todo: verification + ack
-        break;
-    case DEPLOYa:
-        mcbTX.deployA(mcbParam.deployAcc); // todo: verification + ack
-        break;
-    case RETRACTx:
-        retract_length = mcbParam.retractLen;
-        SetAction(COMMAND_REEL_IN); // will be ignored if wrong mode
-        break;
-    case RETRACTv:
-        mcbTX.retractV(mcbParam.retractVel); // todo: verification + ack
-        break;
-    case RETRACTa:
-        mcbTX.retractA(mcbParam.retractAcc); // todo: verification + ack
-        break;
-    case FULLRETRACT:
-        // todo: determine implementation
-        break;
-    // case DOCKx;
-    //     break;
-    case CANCELMOTION:
-        mcbTX.cancelMotion(); // no matter what, attempt to send (irrespective of mode)
-        SetAction(COMMAND_MOTION_STOP);
+    case FTRCYCLETIME:
+        ftr_cycle_time = dibParam.ftrCycleTime;
+        dbg_msg = "Set cycle time to ";
+        dbg_msg += String(ftr_cycle_time);
+        ZephyrLogFine(dbg_msg.c_str());
         break;
     default:
         log_error("Unknown TC received");
@@ -82,7 +69,7 @@ bool StratoPIB::TCHandler(Telecommand_t telecommand)
     return true;
 }
 
-void StratoPIB::ActionHandler(uint8_t action)
+void StratoDIB::ActionHandler(uint8_t action)
 {
     // for safety, ensure index doesn't exceed array size
     if (action >= NUM_ACTIONS) {
@@ -95,7 +82,7 @@ void StratoPIB::ActionHandler(uint8_t action)
     action_flags[action].stale_count = 0;
 }
 
-bool StratoPIB::CheckAction(uint8_t action)
+bool StratoDIB::CheckAction(uint8_t action)
 {
     // for safety, ensure index doesn't exceed array size
     if (action >= NUM_ACTIONS) {
@@ -113,13 +100,13 @@ bool StratoPIB::CheckAction(uint8_t action)
     }
 }
 
-void StratoPIB::SetAction(uint8_t action)
+void StratoDIB::SetAction(uint8_t action)
 {
     action_flags[action].flag_value = true;
     action_flags[action].stale_count = 0;
 }
 
-void StratoPIB::WatchFlags()
+void StratoDIB::WatchFlags()
 {
     // monitor for and clear stale flags
     for (int i = 0; i < NUM_ACTIONS; i++) {
@@ -133,7 +120,7 @@ void StratoPIB::WatchFlags()
     }
 }
 
-void StratoPIB::TakeMCBByte(uint8_t new_byte)
+void StratoDIB::TakeMCBByte(uint8_t new_byte)
 {
     mcbRX.putChar(new_byte);
     if (new_byte == 3) { // EOF char
@@ -141,7 +128,7 @@ void StratoPIB::TakeMCBByte(uint8_t new_byte)
     }
 }
 
-void StratoPIB::RunMCBRouter()
+void StratoDIB::RunMCBRouter()
 {
     if (waiting_mcb_messages) {
         waiting_mcb_messages--;
@@ -163,4 +150,14 @@ void StratoPIB::RunMCBRouter()
             }
         }
     }
+}
+
+void StratoDIB::FTRon()
+{
+    digitalWrite(FTR_POWER, LOW);
+}
+
+void StratoDIB::FTRoff()
+{
+    digitalWrite(FTR_POWER, HIGH);
 }

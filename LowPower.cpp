@@ -3,10 +3,10 @@
  *  Author:  Alex St. Clair
  *  Created: July 2019
  *  
- *  This file implements the RACHuTS low power mode.
+ *  This file implements the FLOATS low power mode.
  */
 
-#include "StratoPIB.h"
+#include "StratoDIB.h"
 
 enum LPStates_t : uint8_t {
     LP_ENTRY = MODE_ENTRY,
@@ -20,7 +20,7 @@ enum LPStates_t : uint8_t {
     LP_EXIT = MODE_EXIT
 };
 
-void StratoPIB::LowPowerMode()
+void StratoDIB::LowPowerMode()
 {
     switch (inst_substate) {
     case LP_ENTRY:

@@ -3,10 +3,10 @@
  *  Author:  Alex St. Clair
  *  Created: July 2019
  *  
- *  This file implements the RACHuTS standby mode.
+ *  This file implements the FLOATS standby mode.
  */
 
-#include "StratoPIB.h"
+#include "StratoDIB.h"
 
 enum SBStates_t : uint8_t {
     SB_ENTRY = MODE_ENTRY,
@@ -18,7 +18,7 @@ enum SBStates_t : uint8_t {
     SB_EXIT = MODE_EXIT
 };
 
-void StratoPIB::StandbyMode()
+void StratoDIB::StandbyMode()
 {
     switch (inst_substate) {
     case SB_ENTRY:

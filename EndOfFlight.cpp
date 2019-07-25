@@ -3,10 +3,10 @@
  *  Author:  Alex St. Clair
  *  Created: July 2019
  *  
- *  This file implements the RACHuTS end of flight mode.
+ *  This file implements the FLOATS end of flight mode.
  */
 
-#include "StratoPIB.h"
+#include "StratoDIB.h"
 
 enum EFStates_t : uint8_t {
     EF_ENTRY = MODE_ENTRY,
@@ -18,7 +18,7 @@ enum EFStates_t : uint8_t {
     EF_EXIT = MODE_EXIT
 };
 
-void StratoPIB::EndOfFlightMode()
+void StratoDIB::EndOfFlightMode()
 {
     switch (inst_substate) {
     case EF_ENTRY:
