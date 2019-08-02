@@ -1,6 +1,6 @@
 # StratoDIB
 
-This repository contains the code to run the Data Interface Board (PIB) on the Fiber-optic Laser Operated Atmospheric Temperature Sensor (FLOATS) flown by LASP on the CNES Strateole 2 super-pressure balloon campaign. StratoDIB inherits functionality from StratoCore, version controlled in a separate repository.
+This repository contains the code to run the Data Interface Board (DIB) on the Fiber-optic Laser Operated Atmospheric Temperature Sensor (FLOATS) flown by LASP on the CNES Strateole 2 super-pressure balloon campaign. StratoDIB inherits functionality from StratoCore, version controlled in a separate repository.
 
 ## Hardware
 
