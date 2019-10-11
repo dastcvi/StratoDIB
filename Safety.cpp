@@ -2,7 +2,7 @@
  *  Safety.cpp
  *  Author:  Alex St. Clair
  *  Created: July 2019
- *  
+ *
  *  This file implements the FLOATS safety mode.
  */
 
@@ -10,12 +10,13 @@
 
 enum SAStates_t : uint8_t {
     SA_ENTRY = MODE_ENTRY,
-    
+
     // add any desired states between entry and shutdown
     SA_LOOP,
     SA_SEND_S,
     SA_ACK_WAIT,
 
+    SA_ERROR_LANDING = MODE_ERROR,
     SA_SHUTDOWN = MODE_SHUTDOWN,
     SA_EXIT = MODE_EXIT
 };
@@ -30,13 +31,13 @@ void StratoDIB::SafetyMode()
         // todo: how to reach safety? Need to reel in PU
 
         digitalWrite(SAFE_PIN, HIGH);
-        
+
         inst_substate = SA_SEND_S;
         break;
     case SA_SEND_S:
         log_nominal("Sending safety message");
         zephyrTX.S();
-        scheduler.AddAction(RESEND_SAFETY, 60);
+        scheduler.AddAction(RESEND_SAFETY, ZEPHYR_RESEND_TIMEOUT);
         inst_substate = SA_ACK_WAIT;
         break;
     case SA_ACK_WAIT:
@@ -60,6 +61,9 @@ void StratoDIB::SafetyMode()
     case SA_LOOP:
         // nominal ops
         log_debug("SA loop");
+        break;
+    case SA_ERROR_LANDING:
+        log_debug("SA error");
         break;
     case SA_SHUTDOWN:
         // prep for shutdown

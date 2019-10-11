@@ -2,7 +2,7 @@
  *  DIBHardware.h
  *  Author:  Alex St. Clair
  *  Created: July 2019
- *  
+ *
  *  Pin and port definitions for the DIB
  */
 
