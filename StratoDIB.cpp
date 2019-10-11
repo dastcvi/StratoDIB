@@ -52,6 +52,7 @@ bool StratoDIB::TCHandler(Telecommand_t telecommand)
     String dbg_msg = "";
 
     switch (telecommand) {
+    // MCB Telecommands -----------------------------------
     case DEPLOYx:
         deploy_length = mcbParam.deployLen;
         SetAction(COMMAND_REEL_OUT); // will be ignored if wrong mode
@@ -91,6 +92,15 @@ bool StratoDIB::TCHandler(Telecommand_t telecommand)
         break;
     case ZEROREEL:
         mcbComm.TX_ASCII(MCB_ZERO_REEL); // todo: verification + ack
+        break;
+    // Non-MCB Telecommands -------------------------------
+    case GOFTRFLIGHT:
+        flight_submode = FTR_SUBMODE;
+        ZephyrLogFine("Set flight sub-mode to FTR");
+        break;
+    case GOMCBFLIGHT:
+        flight_submode = MCB_SUBMODE;
+        ZephyrLogFine("Set flight sub-mode to MCB");
         break;
     case EXITERROR:
         SetAction(EXIT_ERROR_STATE);
