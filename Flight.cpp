@@ -16,7 +16,12 @@ enum FLStatesFTR_t : uint8_t {
     FTR_GPS_WAIT,
 
     // FTR operation states
-    FTR_IDLE,
+    FTR_ENTER_IDLE, //Fiber switch to EFU, turn off FTR, configure LTC chip
+    FTR_IDLE, //FLOATS is between measurements and listening for EFU errors
+    FTR_WARMUP, //Warmup state for FTR3000 (checks FTR status byte)
+    FTR_MEASURE, //Measurement operations 
+    FTR_EFU, //FLOATS is waiting to recieve EFU telemetry based on a synced time
+    FTR_SEND_TELEMETRY,
 
     // ----------------------------------------------------
     // Define FTR states here
@@ -78,28 +83,185 @@ void StratoDIB::FlightFTR()
         // perform setup
         log_nominal("Entering FTR");
         inst_substate = FTR_GPS_WAIT;
+
         break;
     case FTR_GPS_WAIT:
         // wait for the first GPS message from Zephyr to set the time before moving on
         log_debug("Waiting on GPS time");
         if (time_valid) {
-            inst_substate = FTR_IDLE;
+            inst_substate = FTR_ENTER_IDLE;
+            scheduler.AddAction(LISTEN_EFU, Start_EFU_Period);
+            EnterEFU == 0;
         }
         break;
-    case FTR_IDLE:
-        log_debug("FTR Idle");
+
+    case FTR_EFU:
+
+        if(EnterEFU == 0){
+
+            FTR_Off();
+            FiberSwitch_EFU();
+            //SerialComm RX   
+            EnterEFU = 1; 
+            EFU_Counter = 1;      
+        }
+
+        if((CheckAction(LISTEN_EFU)) && (EFU_Counter <= 60/EFU_Loop)) {
+          
+            FTR_Off();
+            FiberSwitch_EFU();
+            //SerialComm RX 
+            EFUCounter++
+            scheduler.AddAction(LISTEN_EFU, EFU_Loop);
+        }
+
+        /*if(SerialComm gives recieved flag){
+            inst_substate = FTR_GPS_WAIT;
+        } */
+
+        break;    
+
+    case FTR_ENTER_IDLE:
+        log_debug("FTR Enter Idle");
+        FTR_Off();
+        FiberSwitch_EFU(); 
+        resetLtcSpi();
+        inst_substate = FTR_IDLE;
+        scheduler.AddAction(IDLE_HOUSEKEEPING, Idle_HK_Loop);
+        scheduler.AddAction(IDLE_EXIT, Idle_Period);
+        //Setup LTC2983
+
+        if (CheckAction(LISTEN_EFU)){
+            scheduler.AddAction(LISTEN_EFU, EFU_Loop);
+            inst_substate = FTR_EFU;
+        }
+
         break;
 
-    // ----------------------------------------------------
-    // Implement FTR states here
-    // ----------------------------------------------------
+    case FTR_IDLE:
+        log_debug("FTR Idle");
 
+        if (CheckAction(LISTEN_EFU)){
+            scheduler.AddAction(LISTEN_EFU, EFU_Loop); //goes into 15 second intervals
+            inst_substate = FTR_EFU;
+        }
+
+        if (CheckAction(IDLE_HOUSEKEEPING)){
+
+            //Get housekeeping during idle
+            //temperature and voltages
+            //populate telemetry
+
+            scheduler.AddAction(IDLE_HOUSEKEEPING, Idle_HK_Loop);
+           
+        }
+
+        if(CheckAction(IDLE_EXIT)){ //could also use a START MEASURE enum here
+
+            inst_substate = FTR_WARMUP; 
+            scheduler.AddAction(INITIALIZE_FTR, 2);
+            scheduler.AddAction(CHECK_FTR_STATUS, Status_Loop);
+            log_debug("Exit Idle");
+        }
+
+
+
+        break;
+
+    case FTR_WARMUP:
+
+        if (CheckAction(LISTEN_EFU)){
+            scheduler.AddAction(LISTEN_EFU, EFU_Loop); //goes into 15 second intervals
+            inst_substate = FTR_EFU;
+        }
+    
+
+        if(CheckAction(INITIALIZE_FTR)){
+            
+            FTR_On();
+            FTR.reset();
+
+        }
+
+        if(CheckAction(CHECK_FTR_STATUS)){
+
+           //to do: get status
+
+            switch(ftr_status){
+            case FTR_READY: //if status byte shows data ready
+                log_nominal("stat ready");
+                Stat_Counter = 0;
+                scheduler.AddAction(FTR_SCAN, Scan_Loop);
+                scheduler.AddAction(SEND_TELEM, Measure_Period);
+                EnterMeasure = 0; 
+                Scan_Counter = 0;
+                inst_substate = FTR_MEASURE;
+                break;
+
+            case FTR_NOTREADY: //if status byte doesn't show date ready
+                scheduler.AddAction(CHECK_FTR_STATUS,Status_Loop);
+                Stat_Counter ++;
+                
+                if(Stat_Counter >= Stat_Limit) //if counter shows FTR status byte as stale
+                    log_error("stat timeout")
+                    scheduler.AddAction(INITIALIZE_FTR, 2);
+                break;
+
+            case FTR_ERROR: //if status byte is out of bounds
+                log_error("stat error");
+                scheduler.AddAction(INITIALIZE_FTR, 2);
+                break;    
+
+            default:
+                log_error("stat unknown") //if there isn't communication with FTR
+                scheduler.AddAction(INITIALIZE_FTR, 2);
+                break; 
+           }   
+
+        }
+
+        break;
+
+    case FTR_MEASURE:
+
+        log_debug("Enter Measure State")
+
+        if (CheckAction(LISTEN_EFU)){
+            scheduler.AddAction(LISTEN_EFU, EFU_Loop); //goes into 15 second intervals
+            inst_substate = FTR_EFU;
+        }
+
+        if(EnterMeasure == 0){
+
+            log_debug("First Scan")
+            //get and handle first scan
+            //get and handle HK data
+            Scan_Counter ++;
+            EnterMeasure = 1;
+            
+        }
+
+        if(CheckAction(FTR_SCAN)){
+            
+            //get and handle scan
+            //get and handle HK data
+            Scan_Counter ++;
+            scheduler.AddAction(FTR_SCAN, Scan_Loop);
+
+        }
+
+
+        break;    
     case FTR_ERROR_LANDING:
         log_error("Landed in flight error");
+        FTR_Off();
+        FiberSwitch_EFU();
         inst_substate = FTR_ERROR_LOOP;
         break;
     case FTR_ERROR_LOOP:
         log_debug("FTR error loop");
+        FTR_Off();
+        FiberSwitch_EFU();
 
         if (CheckAction(EXIT_ERROR_STATE)) {
             log_nominal("Leaving flight error loop");
@@ -109,16 +271,24 @@ void StratoDIB::FlightFTR()
     case FTR_SHUTDOWN_LANDING:
         // prep for shutdown
         log_nominal("Shutdown warning received in FTR");
+        FTR_Off();
+        FiberSwitch_EFU();
         inst_substate = FTR_SHUTDOWN_LOOP;
         break;
     case FTR_SHUTDOWN_LOOP:
+        FTR_Off();
+        FiberSwitch_EFU();
         break;
     case FTR_EXIT:
         // perform cleanup
         log_nominal("Exiting Flight from FTR");
+        FTR_Off();
+        FiberSwitch_EFU();
         break;
     default:
         log_error("Unknown flight FTR state");
+        FTR_Off();
+        FiberSwitch_EFU();
         break;
     }
 }

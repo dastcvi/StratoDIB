@@ -24,6 +24,9 @@ StratoDIB::StratoDIB()
 // note serial setup occurs in main arduino file
 void StratoDIB::InstrumentSetup()
 {
+
+    SPI.begin(); //SPI0 for DIB rev B and C
+
     // for RS232 transceiver
     pinMode(FORCEOFF_232, OUTPUT);
     pinMode(FORCEON_232, OUTPUT);
@@ -33,6 +36,38 @@ void StratoDIB::InstrumentSetup()
     // safe pin required by Zephyr
     pinMode(SAFE_PIN, OUTPUT);
     digitalWrite(SAFE_PIN, LOW);
+
+    //for fiber optic switch
+    pinMode(Switch2_EFU, OUTPUT);
+    digitalWrite(Switch2_EFU,LOW); //only momentary HIGH needed to activate
+
+    pinMode(Switch2_FTR, OUTPUT)
+    digitalWrite(Switch2_FTR,LOW); //only momentary HIGH needed to activate
+    
+    pinMode(SwitchStatus_EFU, INPUT); //HIGH/LOW signal for switch state
+    pinMode(SwitchStatus_FTR, INPUT); //HIGH/LOW signal for switch state
+
+    //FTR
+    pinMode(FTR_POWER, OUTPUT);
+    digitalWrite(FTR_POWER, LOW); //FTR starts powered off
+
+    //WIZIO
+    pinMode(WizReset, OUTPUT);
+    pinMode(WizCS, OUTPUT);
+    digitalWrite(WizCS, HIGH); //deselects Wiz820io from SPI0
+
+    //LTC2983
+    pinMode(LTC_TEMP_RESET_PIN,OUTPUT);
+    pinMode(LTC_TEMP_CS_PIN,OUTPUT);
+    ltcManager.channel_assignments[FOTS1_THERM_CH]  = THERMISTOR_44006;
+    ltcManager.channel_assignments[FOTS2_THERM_CH]  = THERMISTOR_44006;
+    ltcManager.channel_assignments[DCDC_THERM_CH]   = THERMISTOR_44006;
+    ltcManager.channel_assignments[SPARE_THERM_CH]  = THERMISTOR_44006;
+    ltcManager.channel_assignments[OAT_PRT1_RTD_CH] = RTD_PT_100;
+    ltcManager.channel_assignments[OAT_PRT2_RTD_CH] = RTD_PT_100;
+    ltcManager.InitializeAndConfigure();
+    digitalWrite(LTC_TEMP_RESET_PIN, HIGH); //deselects LTC from SPI0
+
 
     mcbComm.AssignBinaryRXBuffer(binary_mcb, 50);
 }
@@ -358,4 +393,121 @@ void StratoDIB::SendMCBTM(StateFlag_t state_flag, String message)
     if (!WriteFileTM("MCB")) {
         log_error("Unable to write MCB TM to SD file");
     }
+}
+
+
+// --------------------------------------------------------
+// Hardware Operation Functions
+// --------------------------------------------------------
+
+void StratoDIB::FTR_On(){
+    digitalWrite(FTR_POWER, LOW);
+    log_debug("FTR Powered On");     
+}
+
+void StratoDIB::FTR_Off(){
+    digitalWrite(FTR_POWER,HIGH);
+    log_debug("FTR Powered Off");
+}
+
+void StratoDIB::FiberSwitch_EFU(){
+     uint16_t count = 0;
+        digitalWrite(Switch2_EFU,HIGH);
+        while(digitalRead(SwitchStatus_EFU)){
+          delay(1);
+          count++;
+          if(count >= 700){
+                //To do: Send Error message for timeout
+                log_debug("Fiber Switch to EFU NACK");
+                log_error("EFU Switch NACK");
+            break;
+          }
+        }
+        digitalWrite(Switch2_EFU,LOW);
+
+}
+
+void StratoDIB::FiberSwitch_FTR(){
+     uint16_t count = 0;
+        digitalWrite(Switch2_FTR,HIGH);
+        while(digitalRead(SwitchStatus_EFU)){
+          delay(1);
+          count++;
+          if(count >= 700){
+                //To do: Send Error message for timeout
+                log_debug("Fiber Switch to FTR NACK");
+                log_error("FTR Switch NACK");
+            break;
+          }
+        }
+        digitalWrite(Switch2_FTR,LOW);       
+}
+
+void StratoDIB::resetWIZ820io(){
+        digitalWrite(WizReset, LOW);
+        delay(100);
+        digitalWrite(WizReset,HIGH);
+        delay(100);
+}
+
+void StratoDIB::resetFtrSpi() {
+        SPI0_SR |= SPI_DISABLE;
+        SPI0_CTAR0 = 0xB8020000;
+        SPI0_SR &= ~(SPI_DISABLE);
+} 
+
+void  StratoDIB::resetLtcSpi() {
+        SPI0_SR |= SPI_DISABLE;
+        SPI0_CTAR0 = 0x38004005;
+        SPI0_SR &= ~(SPI_DISABLE);
+}
+
+
+void  StratoDIB::LTCSetup(){
+
+    log_debug("LTC Configured")
+    ltcManager.channel_assignments[FOTS1_THERM_CH]  = THERMISTOR_44006;
+    ltcManager.channel_assignments[FOTS2_THERM_CH]  = THERMISTOR_44006;
+    ltcManager.channel_assignments[DCDC_THERM_CH]   = THERMISTOR_44006;
+    ltcManager.channel_assignments[SPARE_THERM_CH]  = THERMISTOR_44006;
+    ltcManager.channel_assignments[OAT_PRT1_RTD_CH] = RTD_PT_100;
+    ltcManager.channel_assignments[OAT_PRT2_RTD_CH] = RTD_PT_100;
+    ltcManager.InitializeAndConfigure();
+    digitalWrite(LTC_TEMP_RESET_PIN, HIGH);
+
+    ltcManager.connect();
+}
+
+
+uint8_t StratoDIB::ReadFullTemps() {
+  resetLtcSpi();
+  digitalWrite(14, HIGH);
+  noInterrupts();
+  ltcManager.WakeUp();
+  uint16_t ret = ltcManager.CheckStatusReg();
+  
+  if ((ret == 0) || (ret == 0xFF)) {
+    //Serial.println("Error reading status register, resetting LTC");
+    ltcManager.channel_assignments[FOTS1_THERM_CH]  = THERMISTOR_44006;
+    ltcManager.channel_assignments[FOTS2_THERM_CH]  = THERMISTOR_44006;
+    ltcManager.channel_assignments[DCDC_THERM_CH]   = THERMISTOR_44006;
+    ltcManager.channel_assignments[SPARE_THERM_CH]  = THERMISTOR_44006;
+    ltcManager.channel_assignments[OAT_PRT1_RTD_CH] = RTD_PT_100;
+    ltcManager.channel_assignments[OAT_PRT2_RTD_CH] = RTD_PT_100;
+    ltcManager.InitializeAndConfigure();
+    ret = ltcManager.CheckStatusReg();
+    if ((ret == 0 || ret == 0xFF)) {
+      log_error("LTC Reset failed");
+      return 1;
+    }
+  }
+
+  FOTS1Therm = ltcManager.MeasureChannel(FOTS1_THERM_CH);
+  FOTS2Therm = ltcManager.MeasureChannel(FOTS2_THERM_CH);
+  DC_DC_Therm = ltcManager.MeasureChannel(DCDC_THERM_CH);
+  SpareTherm = ltcManager.MeasureChannel(SPARE_THERM_CH);
+  RTD1 = ltcManager.MeasureChannel(OAT_PRT1_RTD_CH);
+  RTD2 = ltcManager.MeasureChannel(OAT_PRT2_RTD_CH);
+  interrupts();
+  return 0;
 }
