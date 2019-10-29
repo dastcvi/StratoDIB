@@ -90,29 +90,23 @@ void StratoDIB::FlightFTR()
         log_debug("Waiting on GPS time");
         if (time_valid) {
             inst_substate = FTR_ENTER_IDLE;
-            scheduler.AddAction(LISTEN_EFU, Start_EFU_Period);
-            EnterEFU == 0;
+            EFU_Ready = 0;
         }
         break;
 
     case FTR_EFU:
-
-        if(EnterEFU == 0){
-
+        log_debug("Enter EFU State");
+        if((CheckAction(LISTEN_EFU)) && (EFU_Received == 0)){// (EFU_Counter <= 60/EFU_Loop)) {
+            log_debug("Listening for EFU");
             FTR_Off();
             FiberSwitch_EFU();
-            //SerialComm RX   
-            EnterEFU = 1; 
-            EFU_Counter = 1;      
+            EFU_Counter++;
+            scheduler.AddAction(LISTEN_EFU, EFU_Loop);
         }
 
-        if((CheckAction(LISTEN_EFU)) && (EFU_Counter <= 60/EFU_Loop)) {
-          
-            FTR_Off();
-            FiberSwitch_EFU();
-            //SerialComm RX 
-            EFUCounter++
-            scheduler.AddAction(LISTEN_EFU, EFU_Loop);
+        if((EFU_Received) && (EFU_Ready == 0)){
+            log_debug("EFU received and going into GPS wait");
+            inst_substate = FTR_GPS_WAIT;
         }
 
         /*if(SerialComm gives recieved flag){
@@ -131,8 +125,9 @@ void StratoDIB::FlightFTR()
         scheduler.AddAction(IDLE_EXIT, Idle_Period);
         //Setup LTC2983
 
-        if (CheckAction(LISTEN_EFU)){
-            scheduler.AddAction(LISTEN_EFU, EFU_Loop);
+        if (EFU_Ready){
+            SetAction(LISTEN_EFU);
+            EFU_Counter = 0;
             inst_substate = FTR_EFU;
         }
 
@@ -141,8 +136,10 @@ void StratoDIB::FlightFTR()
     case FTR_IDLE:
         log_debug("FTR Idle");
 
-        if (CheckAction(LISTEN_EFU)){
-            scheduler.AddAction(LISTEN_EFU, EFU_Loop); //goes into 15 second intervals
+        if (EFU_Ready){
+            //finish idle HK and telemetry, then:
+            SetAction(LISTEN_EFU); //goes into EFU substate and starts EFU comms
+            EFU_Counter = 0;
             inst_substate = FTR_EFU;
         }
 
@@ -170,53 +167,59 @@ void StratoDIB::FlightFTR()
 
     case FTR_WARMUP:
 
-        if (CheckAction(LISTEN_EFU)){
-            scheduler.AddAction(LISTEN_EFU, EFU_Loop); //goes into 15 second intervals
+        log_debug("Enter Warmup State");
+
+        if (EFU_Ready){
+            SetAction(LISTEN_EFU); //goes into EFU substate and starts EFU comms
+            EFU_Counter = 0;
             inst_substate = FTR_EFU;
         }
     
 
         if(CheckAction(INITIALIZE_FTR)){
-            
+            log_debug("FTR Initialized");
+
             FTR_On();
-            FTR.reset();
+            //ftr.reset();
 
         }
 
         if(CheckAction(CHECK_FTR_STATUS)){
+            log_debug("Checking Status");
+
 
            //to do: get status
 
-            switch(ftr_status){
-            case FTR_READY: //if status byte shows data ready
-                log_nominal("stat ready");
-                Stat_Counter = 0;
-                scheduler.AddAction(FTR_SCAN, Scan_Loop);
-                scheduler.AddAction(SEND_TELEM, Measure_Period);
-                EnterMeasure = 0; 
-                Scan_Counter = 0;
-                inst_substate = FTR_MEASURE;
-                break;
+        //     switch(ftr_status){
+        //     case FTR_READY: //if status byte shows data ready
+        //         log_nominal("stat ready");
+        //         Stat_Counter = 0;
+        //         scheduler.AddAction(FTR_SCAN, Scan_Loop);
+        //         scheduler.AddAction(SEND_TELEM, Measure_Period);
+        //         EnterMeasure = 0; 
+        //         Scan_Counter = 0;
+        //         inst_substate = FTR_MEASURE;
+        //         break;
 
-            case FTR_NOTREADY: //if status byte doesn't show date ready
-                scheduler.AddAction(CHECK_FTR_STATUS,Status_Loop);
-                Stat_Counter ++;
+        //     case FTR_NOTREADY: //if status byte doesn't show date ready
+        //         scheduler.AddAction(CHECK_FTR_STATUS,Status_Loop);
+        //         Stat_Counter ++;
                 
-                if(Stat_Counter >= Stat_Limit) //if counter shows FTR status byte as stale
-                    log_error("stat timeout")
-                    scheduler.AddAction(INITIALIZE_FTR, 2);
-                break;
+        //         if(Stat_Counter >= Stat_Limit) //if counter shows FTR status byte as stale
+        //             log_error("stat timeout")
+        //             scheduler.AddAction(INITIALIZE_FTR, 2);
+        //         break;
 
-            case FTR_ERROR: //if status byte is out of bounds
-                log_error("stat error");
-                scheduler.AddAction(INITIALIZE_FTR, 2);
-                break;    
+        //     case FTR_ERROR: //if status byte is out of bounds
+        //         log_error("stat error");
+        //         scheduler.AddAction(INITIALIZE_FTR, 2);
+        //         break;    
 
-            default:
-                log_error("stat unknown") //if there isn't communication with FTR
-                scheduler.AddAction(INITIALIZE_FTR, 2);
-                break; 
-           }   
+        //     default:
+        //         log_error("stat unknown") //if there isn't communication with FTR
+        //         scheduler.AddAction(INITIALIZE_FTR, 2);
+        //         break; 
+        //    }   
 
         }
 
@@ -224,16 +227,20 @@ void StratoDIB::FlightFTR()
 
     case FTR_MEASURE:
 
-        log_debug("Enter Measure State")
+        log_debug("Enter Measure State");
 
-        if (CheckAction(LISTEN_EFU)){
-            scheduler.AddAction(LISTEN_EFU, EFU_Loop); //goes into 15 second intervals
+        if (EFU_Ready){
+
+            //finish measurement and TM then:
+
+            SetAction(LISTEN_EFU); //goes into EFU substate and starts EFU comms
+            EFU_Counter = 0;
             inst_substate = FTR_EFU;
         }
 
         if(EnterMeasure == 0){
 
-            log_debug("First Scan")
+            log_debug("First Scan");
             //get and handle first scan
             //get and handle HK data
             Scan_Counter ++;

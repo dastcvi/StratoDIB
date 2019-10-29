@@ -15,9 +15,10 @@
 #include "DIBHardware.h"
 #include "DIBBufferGuard.h"
 #include "MCBComm.h"
-#include "PUComm.h"
+#include "EFUComm.h"
 #include <LTC2983Manager.h>
-#include <FTR3000.h>
+//#include <FTR3000.h>
+#include <Ethernet.h> 
 
 
 #define INSTRUMENT      FLOATS
@@ -31,10 +32,6 @@
 #define LOG_ARRAY_SIZE  101
 
 
-
-
-FTR ftr(&client, &Serial);
-LTC2983Manager ltcManager(LTC_TEMP_CS_PIN, LTC_TEMP_RESET_PIN, THERM_SENSE_CH, RTD_SENSE_CH);
 
 // todo: update naming to be more unique (ie. ACT_ prefix)
 enum ScheduleAction_t : uint8_t {
@@ -56,9 +53,11 @@ enum ScheduleAction_t : uint8_t {
 
     //FTR actions
     IDLE_HOUSEKEEPING,
+    IDLE_EXIT,
     INITIALIZE_FTR,
     FTR_SCAN,
     CHECK_FTR_STATUS,
+    START_EFU,
     LISTEN_EFU,
     SEND_TELEM,
     
@@ -93,9 +92,14 @@ public:
     // called in each main loop
     void RunMCBRouter();
 
+     void RunEFURouter();
+
 private:
-    // internal serial interface object for the MCB
+    // instances
     MCBComm mcbComm;
+    //FTR ftr;
+    LTC2983Manager ltcManager;
+    EFUComm efucomm;
 
     // Mode functions (implemented in unique source files)
     void StandbyMode();
@@ -114,11 +118,13 @@ private:
     void FTR_Off();
     void FiberSwitch_EFU();
     void FiberSwitch_FTR();
-    void resetWIZ820io();
-    void resetFtrSpi(); //SPI0 reset for use with WizIO
+    //void resetWIZ820io();
+    //void resetFtrSpi(); //SPI0 reset for use with WizIO
     void resetLtcSpi(); //SPI0 reset for use with LTC2983
     void LTCSetup();
     uint8_t ReadFullTemps();
+
+    void EFUWatch();
 
     //Timing Variable
     int Idle_HK_Loop = 60;
@@ -128,14 +134,13 @@ private:
     int Stat_Counter = 0; 
     int Stat_Limit = 20; //should this be tele configurable?
     int EFU_Loop = 15;
-    TimeElements Start_EFU_Period; 
-    Start_EFU_Period = 59;
     int EFU_Counter = 0;
     int Measure_Period; //should be opposite duty cycle of Idle_period minus EFU telemetry period
     int Scan_Counter = 0;
 
     //Operational Flags
-    bool EnterEFU = 0; 
+    bool EFU_Ready = false; 
+    bool EFU_Received = false;
     bool EnterMeasure = 0;
 
     //Data Variables
@@ -145,6 +150,12 @@ private:
     float SpareTherm;
     float RTD1;
     float RTD2;
+
+
+    //Route and Handle messages from EFUComm
+    void HandleEFUBin();
+    void AddEFUTM();
+    uint8_t bin_rx[2048];
 
 
     // Telcommand handler - returns ack/nak

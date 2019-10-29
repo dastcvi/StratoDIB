@@ -11,9 +11,14 @@
 #include "StratoDIB.h"
 #include "Serialize.h"
 
+
+
 StratoDIB::StratoDIB()
     : StratoCore(&ZEPHYR_SERIAL, INSTRUMENT)
     , mcbComm(&MCB_SERIAL)
+    //, ftr(&client, &Serial)
+    , ltcManager(LTC_TEMP_CS_PIN, LTC_TEMP_RESET_PIN, THERM_SENSE_CH, RTD_SENSE_CH)
+    , efucomm(&Serial3)
 {
 }
 
@@ -26,7 +31,7 @@ void StratoDIB::InstrumentSetup()
 {
 
     SPI.begin(); //SPI0 for DIB rev B and C
-
+    
     // for RS232 transceiver
     pinMode(FORCEOFF_232, OUTPUT);
     pinMode(FORCEON_232, OUTPUT);
@@ -41,7 +46,7 @@ void StratoDIB::InstrumentSetup()
     pinMode(Switch2_EFU, OUTPUT);
     digitalWrite(Switch2_EFU,LOW); //only momentary HIGH needed to activate
 
-    pinMode(Switch2_FTR, OUTPUT)
+    pinMode(Switch2_FTR, OUTPUT);
     digitalWrite(Switch2_FTR,LOW); //only momentary HIGH needed to activate
     
     pinMode(SwitchStatus_EFU, INPUT); //HIGH/LOW signal for switch state
@@ -69,13 +74,17 @@ void StratoDIB::InstrumentSetup()
     digitalWrite(LTC_TEMP_RESET_PIN, HIGH); //deselects LTC from SPI0
 
 
+    efucomm.AssignBinaryRXBuffer(bin_rx, 2048);
     mcbComm.AssignBinaryRXBuffer(binary_mcb, 50);
 }
 
 void StratoDIB::InstrumentLoop()
 {
     WatchFlags();
+    EFUWatch();
 }
+
+
 
 // --------------------------------------------------------
 // Telecommand handler
@@ -200,6 +209,17 @@ void StratoDIB::WatchFlags()
                 action_flags[i].stale_count = 0;
             }
         }
+    }
+}
+
+void StratoDIB::EFUWatch(){
+
+    if(minute()==46){
+        EFU_Ready = true;
+    }
+
+    else{
+        EFU_Ready = false;
     }
 }
 
@@ -443,18 +463,18 @@ void StratoDIB::FiberSwitch_FTR(){
         digitalWrite(Switch2_FTR,LOW);       
 }
 
-void StratoDIB::resetWIZ820io(){
+/* void StratoDIB::resetWIZ820io(){
         digitalWrite(WizReset, LOW);
         delay(100);
         digitalWrite(WizReset,HIGH);
         delay(100);
-}
+} */
 
-void StratoDIB::resetFtrSpi() {
+/* void StratoDIB::resetFtrSpi() {
         SPI0_SR |= SPI_DISABLE;
         SPI0_CTAR0 = 0xB8020000;
         SPI0_SR &= ~(SPI_DISABLE);
-} 
+}  */
 
 void  StratoDIB::resetLtcSpi() {
         SPI0_SR |= SPI_DISABLE;
@@ -465,7 +485,7 @@ void  StratoDIB::resetLtcSpi() {
 
 void  StratoDIB::LTCSetup(){
 
-    log_debug("LTC Configured")
+    log_debug("LTC Configured");
     ltcManager.channel_assignments[FOTS1_THERM_CH]  = THERMISTOR_44006;
     ltcManager.channel_assignments[FOTS2_THERM_CH]  = THERMISTOR_44006;
     ltcManager.channel_assignments[DCDC_THERM_CH]   = THERMISTOR_44006;
@@ -511,3 +531,162 @@ uint8_t StratoDIB::ReadFullTemps() {
   interrupts();
   return 0;
 }
+
+
+// void StratoDIB::PackageFTRTelemetry(int Records)
+// {
+//     int m = 0;
+//     int n = 0;
+//     int i = 0;
+//     String Message = "";
+//     bool flag1 = true;
+//     bool flag2 = true;
+    
+//     /* Check the values for the TM message header */
+//     if ((TempPump1 > 60.0) || (TempPump1 < -30.0))
+//         flag1 = false;
+//     if ((TempPump2 > 60.0) || (TempPump2 < -30.0))
+//         flag1 = false;
+//     if ((TempLaser > 50.0) || (TempLaser < -30.0))
+//         flag1 = false;
+//     if ((TempDCDC > 75.0) || (TempDCDC < -30.0))
+//         flag1 = false;
+    
+//     /*Check Voltages are in range */
+//     if ((VBat > 19.0) || (VBat < 12.0))
+//         flag2 = false;
+   
+    
+//     // First Field
+//     if (flag1) {
+//         zephyrTX.setStateFlagValue(1, FINE);
+//     } else {
+//         zephyrTX.setStateFlagValue(1, WARN);
+//     }
+    
+//     Message.concat(TempPump1);
+//     Message.concat(',');
+//     Message.concat(TempPump2);
+//     Message.concat(',');
+//     Message.concat(TempLaser);
+//     Message.concat(',');
+//     Message.concat(TempDCDC);
+//     zephyrTX.setStateDetails(1, Message);
+//     Message = "";
+    
+//     // Second Field
+//     if (flag2) {
+//         zephyrTX.setStateFlagValue(2, FINE);
+//     } else {
+//         zephyrTX.setStateFlagValue(2, WARN);
+//     }
+    
+//     Message.concat(VBat);
+//     Message.concat(',');
+//     Message.concat(VTeensy);
+//     zephyrTX.setStateDetails(2, Message);
+//     Message = "";
+
+
+//     /* Build the telemetry binary array */
+    
+//     for (m = 0; m < Records; m++)
+//     {
+//         for( n = 0; n < (NumberLGBins + NumberHGBins); n++)
+//         {
+//             zephyrTX.addTm(BinData[n][m]);
+//             BinData[n][m] = 0;
+//             i++;
+        
+//         }
+//         for(n = 0; n < NumberHKChannels; n++)
+//         {
+//             zephyrTX.addTm(HKData[n][m]);
+//             HKData[n][m] = 0;
+//             i++;
+//         }
+//     }
+
+   
+    
+//     //zephyrTX.addTm((uint16_t) 0xFFFF);
+
+//     Serial.print("Sending Records: ");
+//     Serial.println(m);
+//     Serial.print("Sending Bytes: ");
+//     Serial.println(i);
+    
+    
+//     /* send the TM packet to the OBC */
+//     zephyrTX.TM();
+    
+//     //memset(BinData,0,sizeof(BinData)); //After we send a TM packet, zero out the arrays.
+//     //memset(HKData,0,sizeof(BinData)); //After we send a TM packet, zero out the arrays.
+// }
+
+// --------------------------------------------------------
+// EFu Message Router + Handlers
+// --------------------------------------------------------
+
+void StratoDIB::RunEFURouter(){
+    
+    SerialMessage_t EFU_msg = efucomm.RX();
+    
+    while (NO_MESSAGE != EFU_msg) {
+        if (ASCII_MESSAGE == EFU_msg) {
+            
+        } else if (ACK_MESSAGE == EFU_msg) {
+            
+        } else if (BIN_MESSAGE == EFU_msg) {
+            HandleEFUBin();
+        } else {
+            log_error("Unknown message type from EFU");
+        }
+
+        EFU_msg = efucomm.RX();
+    }
+
+}
+
+
+
+void StratoDIB:: HandleEFUBin(){
+
+    if(efucomm.binary_rx.checksum_valid){
+    
+        switch (efucomm.binary_rx.bin_id) {
+        case EFU_DATA_RECORD:
+            AddEFUTM();
+            break;
+        default:
+            log_error("Unknown EFU bin received");
+        }
+
+        EFU_Received = 1;
+        log_nominal("EFU bin handled and sent via TM");
+
+        //if checksum is good send TM packet
+        zephyrTX.setStateFlagValue(1, FINE);
+        zephyrTX.setStateDetails(1, "EFU1");
+        zephyrTX.setStateFlagValue(2, FINE);
+        zephyrTX.setStateDetails(2, "EFU2");   
+        zephyrTX.TM();
+
+    }
+
+
+}
+
+void StratoDIB::AddEFUTM()
+{
+   // add each byte of data to the message
+    for (int i = 0; i < efucomm.binary_rx.bin_length; i++) {
+        if (!zephyrTX.addTm(efucomm.binary_rx.bin_buffer[i])) {
+            log_error("unable to add data byte to EFU TM buffer");
+            return;
+        }
+    }
+}
+
+
+
