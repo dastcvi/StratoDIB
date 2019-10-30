@@ -17,7 +17,7 @@
 #include "MCBComm.h"
 #include "EFUComm.h"
 #include <LTC2983Manager.h>
-//#include <FTR3000.h>
+#include <FTR3000.h>
 #include <Ethernet.h> 
 
 
@@ -52,9 +52,10 @@ enum ScheduleAction_t : uint8_t {
     COMMAND_MOTION_STOP,
 
     //FTR actions
-    IDLE_HOUSEKEEPING,
+    HOUSEKEEPING,
     IDLE_EXIT,
-    INITIALIZE_FTR,
+    POWERON_FTR,
+    CONFIGURE_FTR,
     FTR_SCAN,
     CHECK_FTR_STATUS,
     START_EFU,
@@ -78,6 +79,13 @@ enum FlightSubMode_t : uint8_t {
     MCB_SUBMODE = 1
 };
 
+enum FTRStatus_t : uint8_t {
+    FTR_READY,
+    FTR_NOTREADY,
+    FTR_ERROR
+};
+
+
 class StratoDIB : public StratoCore {
 public:
     StratoDIB();
@@ -97,9 +105,10 @@ public:
 private:
     // instances
     MCBComm mcbComm;
-    //FTR ftr;
+    FTR ftr;
     LTC2983Manager ltcManager;
     EFUComm efucomm;
+    EthernetClient client;
 
     // Mode functions (implemented in unique source files)
     void StandbyMode();
@@ -114,34 +123,38 @@ private:
     FlightSubMode_t flight_submode = FTR_SUBMODE; // reboot default
 
     //Hardware Operation functions
-    void FTR_On();
-    void FTR_Off();
-    void FiberSwitch_EFU();
-    void FiberSwitch_FTR();
-    //void resetWIZ820io();
-    //void resetFtrSpi(); //SPI0 reset for use with WizIO
+    void FTR_On(); //switches FTR power on
+    void FTR_Off(); //switches FTR power off
+    void FiberSwitch_EFU(); //Fiber switch actuated to EFU side
+    void FiberSwitch_FTR(); //Fiber switch actuacted to FTR side
     void resetLtcSpi(); //SPI0 reset for use with LTC2983
-    void LTCSetup();
-    uint8_t ReadFullTemps();
+    void LTCSetup(); //Sets up LTC channels
+    void ReadFullTemps(); //gets full temperature string
+    void ReadVoltages(); //get voltages
+    void FTRStatusReport(uint8_t); //sets ftr_status variable based on FTR status byte retrieved with FTR3000 library
 
-    void EFUWatch();
+    void EFUWatch(); //Sets EFU ready flag when predetermined minute is reached
 
-    //Timing Variable
-    int Idle_HK_Loop = 60;
-    int Idle_Period; //Should be opposite duty cycle of measure period minus Start_EFU_Period telemetry period
-    int Status_Loop = 30;
-    int Scan_Loop = 120;
-    int Stat_Counter = 0; 
-    int Stat_Limit = 20; //should this be tele configurable?
-    int EFU_Loop = 15;
+    //Timing Variables
+    uint16_t Measure_Period = 10*60; //10 minutes nominally
+    uint16_t HK_Loop = 120; //number of seconds between idle HK data retreival
+    uint16_t Idle_Period = 2*60; //Should be opposite duty cycle of measure period minus Start_EFU_Period telemetry period
+    uint16_t Stat_Limit = 300/Status_Loop; //number of FTR status requests before timeout and FTR3000 reset
+    
+    int Status_Loop = 20; // number of seconds between FTR status requests
+    int Scan_Loop = 120; //number of seconds per scan. FTR3000 scan time hardset to 2minutes.
+    int Stat_Counter = 0; //number of times status is requested prior to entering measurement state or resetting FTR3000
+    int EFU_Loop = 15; //number of seconds between EFU retrieval attempts during EFU telemetry state
     int EFU_Counter = 0;
-    int Measure_Period; //should be opposite duty cycle of Idle_period minus EFU telemetry period
-    int Scan_Counter = 0;
+    int Scan_Counter = 0; //number of 2 minute FTR3000 scans attempted
 
     //Operational Flags
     bool EFU_Ready = false; 
     bool EFU_Received = false;
     bool EnterMeasure = 0;
+    
+    //State variables
+    uint8_t ftr_status;
 
     //Data Variables
     float FOTS1Therm;
@@ -150,13 +163,30 @@ private:
     float SpareTherm;
     float RTD1;
     float RTD2;
+    int V_Zephyr;
+    int V_3v3;
+    int V_5TX;
+    int V_12FTR;
 
+    //FTR Arrays
+    byte RamanBin[17000]; //Binary array that contains raw FTR scan
+    uint16_t Stokes[1750]; //instant stokes scan from RamanBin
+    uint16_t Astokes[1750]; //instant antistokes scan from RamanBin
+    uint16_t StokesElements[1750]; //number of good scans per array point for stokes averaging
+    uint16_t AstokesElements[1750]; //number of good scans per array point for antistokes averaging
+    uint16_t StokesAvg[1750]; //stokes CO-add values that will be averaged using elements array and passed as TM
+    uint16_t AStokesAvg[1750]; //antistokes Co-add values that will be averaging using the elements array and passed as TM
+    uint16_t Stokes_Counter = 0;
+    uint16_t Astokes_Counter = 0;
 
     //Route and Handle messages from EFUComm
     void HandleEFUBin();
     void AddEFUTM();
     uint8_t bin_rx[2048];
 
+    //Handle FTR cans and telemetry
+    void HandleFTRBin();
+    void XMLHeader();
 
     // Telcommand handler - returns ack/nak
     bool TCHandler(Telecommand_t telecommand);

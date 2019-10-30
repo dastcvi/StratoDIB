@@ -16,7 +16,7 @@
 StratoDIB::StratoDIB()
     : StratoCore(&ZEPHYR_SERIAL, INSTRUMENT)
     , mcbComm(&MCB_SERIAL)
-    //, ftr(&client, &Serial)
+    , ftr(&client, &Serial)
     , ltcManager(LTC_TEMP_CS_PIN, LTC_TEMP_RESET_PIN, THERM_SENSE_CH, RTD_SENSE_CH)
     , efucomm(&Serial3)
 {
@@ -73,6 +73,12 @@ void StratoDIB::InstrumentSetup()
     ltcManager.InitializeAndConfigure();
     digitalWrite(LTC_TEMP_RESET_PIN, HIGH); //deselects LTC from SPI0
 
+      // ADC Setup
+    pinMode(VMON_3V3,INPUT);
+    pinMode(VMON_12V,INPUT);
+    pinMode(VMON_5V,INPUT);
+    pinMode(VMON_15V,INPUT);
+    analogReference(EXTERNAL);
 
     efucomm.AssignBinaryRXBuffer(bin_rx, 2048);
     mcbComm.AssignBinaryRXBuffer(binary_mcb, 50);
@@ -146,6 +152,11 @@ bool StratoDIB::TCHandler(Telecommand_t telecommand)
         flight_submode = MCB_SUBMODE;
         ZephyrLogFine("Set flight sub-mode to MCB");
         break;
+    case FTRONTIME:
+        Measure_Period = dibParam.ftrOnTime;
+        break;
+    case FTRCYCLETIME: 
+        Idle_Period = dibParam.ftrCycleTime;
     case EXITERROR:
         SetAction(EXIT_ERROR_STATE);
         break;
@@ -209,17 +220,6 @@ void StratoDIB::WatchFlags()
                 action_flags[i].stale_count = 0;
             }
         }
-    }
-}
-
-void StratoDIB::EFUWatch(){
-
-    if(minute()==46){
-        EFU_Ready = true;
-    }
-
-    else{
-        EFU_Ready = false;
     }
 }
 
@@ -463,25 +463,30 @@ void StratoDIB::FiberSwitch_FTR(){
         digitalWrite(Switch2_FTR,LOW);       
 }
 
-/* void StratoDIB::resetWIZ820io(){
-        digitalWrite(WizReset, LOW);
-        delay(100);
-        digitalWrite(WizReset,HIGH);
-        delay(100);
-} */
+void StratoDIB::FTRStatusReport(uint8_t status){
 
-/* void StratoDIB::resetFtrSpi() {
-        SPI0_SR |= SPI_DISABLE;
-        SPI0_CTAR0 = 0xB8020000;
-        SPI0_SR &= ~(SPI_DISABLE);
-}  */
+    if(status == 0x00){        
+        ftr_status = FTR_ERROR;
+    }
+
+    else if((status == 0x27) ){
+        ftr_status = FTR_NOTREADY;
+    }
+
+    else if((status == 0x57) || (status == 0x67) || (status == 0x17)){
+        ftr_status = FTR_READY;
+    }
+
+    else {
+        ftr_status = FTR_ERROR;
+    }
+}
 
 void  StratoDIB::resetLtcSpi() {
         SPI0_SR |= SPI_DISABLE;
         SPI0_CTAR0 = 0x38004005;
         SPI0_SR &= ~(SPI_DISABLE);
 }
-
 
 void  StratoDIB::LTCSetup(){
 
@@ -498,8 +503,7 @@ void  StratoDIB::LTCSetup(){
     ltcManager.connect();
 }
 
-
-uint8_t StratoDIB::ReadFullTemps() {
+void StratoDIB::ReadFullTemps() {
   resetLtcSpi();
   digitalWrite(14, HIGH);
   noInterrupts();
@@ -518,7 +522,7 @@ uint8_t StratoDIB::ReadFullTemps() {
     ret = ltcManager.CheckStatusReg();
     if ((ret == 0 || ret == 0xFF)) {
       log_error("LTC Reset failed");
-      return 1;
+      //return 1;
     }
   }
 
@@ -529,104 +533,36 @@ uint8_t StratoDIB::ReadFullTemps() {
   RTD1 = ltcManager.MeasureChannel(OAT_PRT1_RTD_CH);
   RTD2 = ltcManager.MeasureChannel(OAT_PRT2_RTD_CH);
   interrupts();
-  return 0;
+  //return 0;
 }
 
+void StratoDIB::ReadVoltages(){
 
-// void StratoDIB::PackageFTRTelemetry(int Records)
-// {
-//     int m = 0;
-//     int n = 0;
-//     int i = 0;
-//     String Message = "";
-//     bool flag1 = true;
-//     bool flag2 = true;
-    
-//     /* Check the values for the TM message header */
-//     if ((TempPump1 > 60.0) || (TempPump1 < -30.0))
-//         flag1 = false;
-//     if ((TempPump2 > 60.0) || (TempPump2 < -30.0))
-//         flag1 = false;
-//     if ((TempLaser > 50.0) || (TempLaser < -30.0))
-//         flag1 = false;
-//     if ((TempDCDC > 75.0) || (TempDCDC < -30.0))
-//         flag1 = false;
-    
-//     /*Check Voltages are in range */
-//     if ((VBat > 19.0) || (VBat < 12.0))
-//         flag2 = false;
-   
-    
-//     // First Field
-//     if (flag1) {
-//         zephyrTX.setStateFlagValue(1, FINE);
-//     } else {
-//         zephyrTX.setStateFlagValue(1, WARN);
-//     }
-    
-//     Message.concat(TempPump1);
-//     Message.concat(',');
-//     Message.concat(TempPump2);
-//     Message.concat(',');
-//     Message.concat(TempLaser);
-//     Message.concat(',');
-//     Message.concat(TempDCDC);
-//     zephyrTX.setStateDetails(1, Message);
-//     Message = "";
-    
-//     // Second Field
-//     if (flag2) {
-//         zephyrTX.setStateFlagValue(2, FINE);
-//     } else {
-//         zephyrTX.setStateFlagValue(2, WARN);
-//     }
-    
-//     Message.concat(VBat);
-//     Message.concat(',');
-//     Message.concat(VTeensy);
-//     zephyrTX.setStateDetails(2, Message);
-//     Message = "";
-
-
-//     /* Build the telemetry binary array */
-    
-//     for (m = 0; m < Records; m++)
-//     {
-//         for( n = 0; n < (NumberLGBins + NumberHGBins); n++)
-//         {
-//             zephyrTX.addTm(BinData[n][m]);
-//             BinData[n][m] = 0;
-//             i++;
-        
-//         }
-//         for(n = 0; n < NumberHKChannels; n++)
-//         {
-//             zephyrTX.addTm(HKData[n][m]);
-//             HKData[n][m] = 0;
-//             i++;
-//         }
-//     }
-
-   
-    
-//     //zephyrTX.addTm((uint16_t) 0xFFFF);
-
-//     Serial.print("Sending Records: ");
-//     Serial.println(m);
-//     Serial.print("Sending Bytes: ");
-//     Serial.println(i);
-    
-    
-//     /* send the TM packet to the OBC */
-//     zephyrTX.TM();
-    
-//     //memset(BinData,0,sizeof(BinData)); //After we send a TM packet, zero out the arrays.
-//     //memset(HKData,0,sizeof(BinData)); //After we send a TM packet, zero out the arrays.
-// }
+  int val = analogRead(VMON_15V);  
+  V_Zephyr = (val*(3.0/1023.0))*((10000.0+1100.0)/1100.0); 
+  val = analogRead(VMON_3V3);  
+  V_3v3 = (val*(3.0/1023.0))*((10000+10000)/10000);
+  val = analogRead(VMON_5V);  
+  V_5TX = (val*(3.0/1023.0))*((10000+1100)/1100);
+  val = analogRead(VMON_12V); 
+  V_12FTR = (val*(3.0/1023.0))*((10000+1100)/1100);
+}
 
 // --------------------------------------------------------
 // EFu Message Router + Handlers
 // --------------------------------------------------------
+
+
+void StratoDIB::EFUWatch(){
+
+    if(minute()==46){
+        EFU_Ready = true;
+    }
+
+    else{
+        EFU_Ready = false;
+    }
+}
 
 void StratoDIB::RunEFURouter(){
     
@@ -648,11 +584,9 @@ void StratoDIB::RunEFURouter(){
 
 }
 
-
-
 void StratoDIB:: HandleEFUBin(){
 
-    if(efucomm.binary_rx.checksum_valid){
+    if(efucomm.binary_rx.checksum_valid){ // to do: possible problem with EFU side checksum
     
         switch (efucomm.binary_rx.bin_id) {
         case EFU_DATA_RECORD:
@@ -667,9 +601,9 @@ void StratoDIB:: HandleEFUBin(){
 
         //if checksum is good send TM packet
         zephyrTX.setStateFlagValue(1, FINE);
-        zephyrTX.setStateDetails(1, "EFU1");
+        zephyrTX.setStateDetails(1, "EFU1"); //to do: add FLOATS HK here
         zephyrTX.setStateFlagValue(2, FINE);
-        zephyrTX.setStateDetails(2, "EFU2");   
+        zephyrTX.setStateDetails(2, "EFU2"); //to do: add FLOATS HK here  
         zephyrTX.TM();
 
     }
@@ -689,4 +623,72 @@ void StratoDIB::AddEFUTM()
 }
 
 
+// ------------------------------------------------------
+// Handle FTR3000 Data
+//-------------------------------------------------------
+
+void StratoDIB::XMLHeader(){
+
+    ReadFullTemps();
+    ReadVoltages();
+
+    String Message = "";
+    bool flag1 = true;
+    bool flag2 = true;
+    
+    /* Check the values for the TM message header */
+    if ((DC_DC_Therm > 60.0) || (DC_DC_Therm < -30.0))
+        flag1 = false;
+    if ((FOTS1Therm > 60.0) || (FOTS1Therm < -30.0))
+        flag1 = false;
+    if ((FOTS2Therm > 60.0) || (FOTS2Therm < -30.0))
+        flag1 = false;
+ 
+
+    /*Check Voltages are in range */
+    if ((V_Zephyr > 19.0) || (V_Zephyr < 12.0))
+        flag2 = false;
+    if((V_12FTR>13.0) || (V_12FTR<11.5))
+        flag2 = false;
+
+    //First Field
+    if (flag1) {
+        zephyrTX.setStateFlagValue(1, FINE);
+    } else {
+        zephyrTX.setStateFlagValue(1, WARN);
+    }
+
+    Message.concat(FOTS1Therm);
+    Message.concat(',');
+    Message.concat(FOTS2Therm);
+    Message.concat(',');
+    Message.concat(DC_DC_Therm);
+    Message.concat(',');
+    Message.concat(SpareTherm);
+    Message.concat(',');
+    Message.concat(RTD1);
+    Message.concat(',');
+    Message.concat(RTD2);
+    zephyrTX.setStateDetails(1, Message);
+    Message = "";
+    
+    // Second Field
+    if (flag2) {
+        zephyrTX.setStateFlagValue(2, FINE);
+    } else {
+        zephyrTX.setStateFlagValue(2, WARN);
+    }
+    
+    Message.concat(V_Zephyr);
+    Message.concat(',');
+    Message.concat(V_3v3);
+    Message.concat(',');
+    Message.concat(V_5TX);
+    Message.concat(',');
+    Message.concat(V_12FTR);
+    zephyrTX.setStateDetails(2, Message);
+    Message = "";
+
+
+}
 
