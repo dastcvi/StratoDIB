@@ -87,17 +87,18 @@ void StratoDIB::FlightFTR()
         break;
     case FTR_GPS_WAIT:
         // wait for the first GPS message from Zephyr to set the time before moving on
-        log_debug("Waiting on GPS time");
+        log_nominal("Waiting on GPS time");
         if (time_valid) {
             inst_substate = FTR_ENTER_IDLE;
             EFU_Ready = 0;
+            log_debug("FTR Enter Idle");
         }
         break;
 
     case FTR_EFU:
-        log_debug("Enter EFU State");
+        
         if((CheckAction(LISTEN_EFU)) && (EFU_Received == 0)){ //if Listen EFU loop is scheduled and a EFU telemetry packet hasn't been successfully received
-            log_debug("Listening for EFU");
+            log_nominal("Listening for EFU");
             //EFUrouter is always running in Main loop and will only make EFU comms when in this configuration
             FTR_Off();
             FiberSwitch_EFU();
@@ -111,12 +112,13 @@ void StratoDIB::FlightFTR()
 
         if(EFU_Ready==0){ //if EFUWatch expires but EFU telemetry was not received
             log_debug("EFU not received, EFU telem timeout");
+            ZephyrLogWarn("FTR status failure");
             inst_substate = FTR_GPS_WAIT;
         }
         break;   
 
     case FTR_ENTER_IDLE:
-        log_debug("FTR Enter Idle");
+        
         FTR_Off();
         FiberSwitch_EFU(); 
         inst_substate = FTR_IDLE;
@@ -126,20 +128,22 @@ void StratoDIB::FlightFTR()
         if (EFU_Ready){
             SetAction(LISTEN_EFU);
             inst_substate = FTR_EFU;
+            log_nominal("Enterering EFU State");
         }
         break;
 
     case FTR_IDLE:
-        log_debug("FTR Idle");
-
+        
         if (EFU_Ready){
             SetAction(LISTEN_EFU); //goes into EFU substate and starts EFU comms
             inst_substate = FTR_EFU;
+            log_nominal("Enterering EFU State");
         }
 
         if (CheckAction(HOUSEKEEPING)){
             log_debug("Sending Housekeeping");
             XMLHeader();
+            zephyrTX.TM();
             scheduler.AddAction(HOUSEKEEPING, HK_Loop);
         }
 
@@ -147,16 +151,12 @@ void StratoDIB::FlightFTR()
 
             inst_substate = FTR_WARMUP;
             SetAction(POWERON_FTR);
-            log_debug("Exit Idle");
+            log_nominal("Enter Warmup State");
         }
-
-
 
         break;
 
     case FTR_WARMUP:
-
-        log_debug("Enter Warmup State");
 
         if (EFU_Ready){
             SetAction(LISTEN_EFU); //goes into EFU substate and starts EFU comms
@@ -166,6 +166,7 @@ void StratoDIB::FlightFTR()
         if (CheckAction(HOUSEKEEPING)){
             log_debug("Sending Housekeeping");
             XMLHeader();
+            zephyrTX.TM();
             scheduler.AddAction(HOUSEKEEPING, HK_Loop);
         }
 
@@ -176,110 +177,151 @@ void StratoDIB::FlightFTR()
             FTR_On();
             FiberSwitch_FTR();
             ftr.resetFtrSpi();
-            scheduler.AddAction(CONFIGURE_FTR, 6);  
+            ftr.start();
+            scheduler.AddAction(CONFIGURE_FTR, 15);
+            EthernetCount = 0;  
         }
     
         if(CheckAction(CONFIGURE_FTR)){
             log_debug("Configuring FTR");
-            if(ftr.start()){ 
+            
+            if(EthernetCount>=10){
+                log_debug("Ethernet Time out - resetting FTR");
+                SetAction(POWERON_FTR);
+            }
+            
+            if(ftr.EthernetConnect()){ 
                 scheduler.AddAction(CHECK_FTR_STATUS, Status_Loop); 
                 Stat_Counter = 0;
-            }   
+            } 
+
+            else if(!ftr.EthernetConnect()){
+                scheduler.AddAction(CONFIGURE_FTR, 5); 
+                log_debug("Attempting to connect Ethernet");
+                EthernetCount++;
+            } 
         }
 
         if(CheckAction(CHECK_FTR_STATUS)){
             log_debug("Checking Status");
+            ftr_status = ENTERSTAT;
             FTRStatusReport(ftr.status());
-            
+
             switch(ftr_status){
             case FTR_READY: //if status byte shows data ready
                 log_nominal("stat ready");
                 SetAction(FTR_SCAN);
-                scheduler.AddAction(SEND_TELEM, Measure_Period);
+                scheduler.AddAction(BUILD_TELEM, Measure_Period);
                 inst_substate = FTR_MEASURE;
                 Stokes_Counter = 0;
                 Astokes_Counter = 0;
+                log_debug("Entering Measure State");
                 break;
 
             case FTR_NOTREADY: //if status byte doesn't show data ready
+                log_error("stat not ready");
                 scheduler.AddAction(CHECK_FTR_STATUS,Status_Loop);
                 Stat_Counter ++;
+                Serial.println(Stat_Counter);
                 
-                if(Stat_Counter >= Stat_Limit) //if counter shows FTR status byte as stale
-                    log_error("stat timeout");
-                    SetAction(POWERON_FTR);
-                break;
-
             case FTR_ERROR: //if status byte is out of bounds
                 log_error("stat error");
-                SetAction(POWERON_FTR);
+                scheduler.AddAction(CHECK_FTR_STATUS,Status_Loop);
+                Stat_Counter ++;
                 break;    
 
             default:
                 log_error("stat unknown"); //if there isn't communication with FTR
+                scheduler.AddAction(CHECK_FTR_STATUS,Status_Loop);
+                Stat_Counter ++;
+                break;  
+           } 
+
+            if(Stat_Counter >= Stat_Limit){ //if counter shows FTR status byte as stale
+                log_error("stat timeout");
+                ZephyrLogCrit("FTR status failure");
                 SetAction(POWERON_FTR);
-                break; 
-           }   
+            }
 
         }
         break;
 
     case FTR_MEASURE:
 
-        log_debug("Enter Measure State");
-
         if (EFU_Ready){
 
-            XMLHeader();
-            ftr.RamanAverage(StokesElements, StokesAvg);
-            zephyrTX.addTm(Stokes_Counter);
-            zephyrTX.addTm(StokesAvg, 7200);
-            ftr.RamanAverage(AstokesElements,AStokesAvg);
-            zephyrTX.addTm(Astokes_Counter);
-            zephyrTX.addTm(AStokesAvg, 7200);
-            zephyrTX.TM();
-            ftr.ClearArray(StokesAvg);
-            ftr.ClearArray(AStokesAvg);
-
+            SetAction(BUILD_TELEM);
             SetAction(LISTEN_EFU); //goes into EFU substate and starts EFU comms
             inst_substate = FTR_EFU;
+            log_nominal("Enterering EFU State");
         }
 
         if (CheckAction(HOUSEKEEPING)){
             log_debug("Sending Housekeeping");
             XMLHeader();
+            zephyrTX.TM();
             scheduler.AddAction(HOUSEKEEPING, HK_Loop);
         }
 
         if(CheckAction(FTR_SCAN)){
             
             ftr.resetFtrSpi();
+
+            //get raman data and parse to stokes and antistokes arrays
             ftr.readRaman(RamanBin);
-            ftr.BintoArray(RamanBin, Stokes, Astokes);
-            ftr.ClearArray(RamanBin);
-            Stokes_Counter += ftr.RamanCoAdd(StokesElements, Stokes, StokesAvg);
-            ftr.ClearArray(Stokes);
-            Astokes_Counter += ftr.RamanCoAdd(AstokesElements, Astokes, AStokesAvg);
-            ftr.ClearArray(Astokes);
+            ftr.BintoArray(RamanBin, Stokes, Astokes, RamanLength);
+            ftr.ClearArray(RamanBin, 17000);
+
+            //Co-add arrays and keep track of coadd number for each index point
+            Stokes_Counter += ftr.RamanCoAdd(StokesElements, Stokes, StokesAvg, RamanLength);
+            ftr.ClearArray(Stokes, RamanLength);
+            Astokes_Counter += ftr.RamanCoAdd(AstokesElements, Astokes, AStokesAvg, RamanLength);
+            ftr.ClearArray(Astokes, RamanLength);
 
             scheduler.AddAction(FTR_SCAN, Scan_Loop);
         }
 
-        if(CheckAction(SEND_TELEM)){
+        if(CheckAction(BUILD_TELEM)){
 
             XMLHeader();
-            ftr.RamanAverage(StokesElements, StokesAvg);
+            ftr.RamanAverage(StokesElements, StokesAvg, Stokes, RamanLength);
             zephyrTX.addTm(Stokes_Counter);
-            zephyrTX.addTm(StokesAvg, 7200);
-            ftr.RamanAverage(AstokesElements,AStokesAvg);
+            zephyrTX.addTm(Stokes, RamanLength);
+            ftr.RamanAverage(AstokesElements,AStokesAvg, Astokes, RamanLength);
             zephyrTX.addTm(Astokes_Counter);
-            zephyrTX.addTm(AStokesAvg, 7200);
+            zephyrTX.addTm(Astokes, RamanLength);
+
+            SetAction(SEND_TELEM);
+              
+        } 
+
+        if(CheckAction(SEND_TELEM)){   
+            
             zephyrTX.TM();
-            ftr.ClearArray(StokesAvg);
-            ftr.ClearArray(AStokesAvg);
 
-            inst_substate = FTR_ENTRY;    
+            if (ACK == TM_ack_flag) {
+                
+                zephyrTX.clearTm();
+                ftr.ClearArray(Stokes, RamanLength);
+                ftr.ClearArray(Astokes, RamanLength);
 
+                if(inst_substate == FTR_MEASURE){
+                    inst_substate = FTR_ENTRY;
+                }
+                
+        
+            } else if (NAK == TM_ack_flag) {
+            // attempt one resend
+                log_debug("NAK resending TM");
+                zephyrTX.TM();
+                zephyrTX.clearTm();
+                ftr.ClearArray(Stokes, RamanLength);
+                ftr.ClearArray(Astokes, RamanLength);
+
+                if(inst_substate == FTR_MEASURE){
+                    inst_substate = FTR_ENTRY;
+                }
+            }
         }
 
         break;    

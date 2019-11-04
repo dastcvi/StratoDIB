@@ -54,7 +54,7 @@ void StratoDIB::InstrumentSetup()
 
     //FTR
     pinMode(FTR_POWER, OUTPUT);
-    digitalWrite(FTR_POWER, LOW); //FTR starts powered off
+    FTR_Off();
 
     //WIZIO
     pinMode(WizReset, OUTPUT);
@@ -465,11 +465,7 @@ void StratoDIB::FiberSwitch_FTR(){
 
 void StratoDIB::FTRStatusReport(uint8_t status){
 
-    if(status == 0x00){        
-        ftr_status = FTR_ERROR;
-    }
-
-    else if((status == 0x27) ){
+    if((status == 0x27) || (status == 0x00)){
         ftr_status = FTR_NOTREADY;
     }
 
@@ -538,14 +534,15 @@ void StratoDIB::ReadFullTemps() {
 
 void StratoDIB::ReadVoltages(){
 
-  int val = analogRead(VMON_15V);  
-  V_Zephyr = (val*(3.0/1023.0))*((10000.0+1100.0)/1100.0); 
+  float val = analogRead(VMON_15V);  
+  //V_Zephyr = (val*(3.0/1023.0))*((10000.0+995.0)/995.0); 
+  V_Zephyr = (val*(3.3/1023.0))*((10000.0+1100.0)/1100.0); 
   val = analogRead(VMON_3V3);  
-  V_3v3 = (val*(3.0/1023.0))*((10000+10000)/10000);
+  V_3v3 = (val*(3.3/1023.0))*((10000.0+10000.0)/10000.0);
   val = analogRead(VMON_5V);  
-  V_5TX = (val*(3.0/1023.0))*((10000+1100)/1100);
+  V_5TX = (val*(3.3/1023.0))*((10000.0+1100.0)/1100.0);
   val = analogRead(VMON_12V); 
-  V_12FTR = (val*(3.0/1023.0))*((10000+1100)/1100);
+  V_12FTR = (val*(3.3/1023.0))*((10000.0+1100.0)/1100.0);
 }
 
 // --------------------------------------------------------
@@ -586,7 +583,7 @@ void StratoDIB::RunEFURouter(){
 
 void StratoDIB:: HandleEFUBin(){
 
-    if(efucomm.binary_rx.checksum_valid){ // to do: possible problem with EFU side checksum
+    //if(efucomm.binary_rx.checksum_valid){ // to do: possible problem with EFU side checksum
     
         switch (efucomm.binary_rx.bin_id) {
         case EFU_DATA_RECORD:
@@ -605,8 +602,7 @@ void StratoDIB:: HandleEFUBin(){
         zephyrTX.setStateFlagValue(2, FINE);
         zephyrTX.setStateDetails(2, "EFU2"); //to do: add FLOATS HK here  
         zephyrTX.TM();
-
-    }
+//}
 
 
 }

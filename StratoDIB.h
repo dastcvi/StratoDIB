@@ -60,6 +60,7 @@ enum ScheduleAction_t : uint8_t {
     CHECK_FTR_STATUS,
     START_EFU,
     LISTEN_EFU,
+    BUILD_TELEM,
     SEND_TELEM,
     
     // used for tracking
@@ -80,6 +81,7 @@ enum FlightSubMode_t : uint8_t {
 };
 
 enum FTRStatus_t : uint8_t {
+    ENTERSTAT,
     FTR_READY,
     FTR_NOTREADY,
     FTR_ERROR
@@ -136,10 +138,10 @@ private:
     void EFUWatch(); //Sets EFU ready flag when predetermined minute is reached
 
     //Timing Variables
-    uint16_t Measure_Period = 10*60; //10 minutes nominally
-    uint16_t HK_Loop = 120; //number of seconds between idle HK data retreival
-    uint16_t Idle_Period = 2*60; //Should be opposite duty cycle of measure period minus Start_EFU_Period telemetry period
-    uint16_t Stat_Limit = 300/Status_Loop; //number of FTR status requests before timeout and FTR3000 reset
+    uint16_t Measure_Period = 6*60; //10 minutes nominally
+    uint16_t HK_Loop = 90; //number of seconds between idle HK data retreival
+    uint16_t Idle_Period = 60; //Should be opposite duty cycle of measure period minus Start_EFU_Period telemetry period
+    uint16_t Stat_Limit = 300/20; //number of FTR status requests before timeout and FTR3000 reset
     
     int Status_Loop = 20; // number of seconds between FTR status requests
     int Scan_Loop = 120; //number of seconds per scan. FTR3000 scan time hardset to 2minutes.
@@ -147,6 +149,7 @@ private:
     int EFU_Loop = 15; //number of seconds between EFU retrieval attempts during EFU telemetry state
     int EFU_Counter = 0;
     int Scan_Counter = 0; //number of 2 minute FTR3000 scans attempted
+    uint8_t EthernetCount = 0; 
 
     //Operational Flags
     bool EFU_Ready = false; 
@@ -163,21 +166,23 @@ private:
     float SpareTherm;
     float RTD1;
     float RTD2;
-    int V_Zephyr;
-    int V_3v3;
-    int V_5TX;
-    int V_12FTR;
+    float V_Zephyr;
+    float V_3v3;
+    float V_5TX;
+    float V_12FTR;
 
     //FTR Arrays
+    uint16_t RamanLength = 1850;
     byte RamanBin[17000]; //Binary array that contains raw FTR scan
-    uint16_t Stokes[1750]; //instant stokes scan from RamanBin
-    uint16_t Astokes[1750]; //instant antistokes scan from RamanBin
-    uint16_t StokesElements[1750]; //number of good scans per array point for stokes averaging
-    uint16_t AstokesElements[1750]; //number of good scans per array point for antistokes averaging
-    uint16_t StokesAvg[1750]; //stokes CO-add values that will be averaged using elements array and passed as TM
-    uint16_t AStokesAvg[1750]; //antistokes Co-add values that will be averaging using the elements array and passed as TM
+    uint16_t Stokes[2200]; //instant stokes scan from RamanBin
+    uint16_t Astokes[2200]; //instant antistokes scan from RamanBin
+    uint16_t StokesElements[2200]; //number of good scans per array point for stokes averaging
+    uint16_t AstokesElements[2200]; //number of good scans per array point for antistokes averaging
+    float StokesAvg[2200]; //stokes CO-add values that will be averaged using elements array and passed as TM
+    float AStokesAvg[2200]; //antistokes Co-add values that will be averaging using the elements array and passed as TM
     uint16_t Stokes_Counter = 0;
     uint16_t Astokes_Counter = 0;
+    
 
     //Route and Handle messages from EFUComm
     void HandleEFUBin();
