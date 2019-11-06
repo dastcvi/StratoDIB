@@ -90,6 +90,7 @@ void StratoDIB::FlightFTR()
         log_nominal("Waiting on GPS time");
         if (time_valid) {
             inst_substate = FTR_ENTER_IDLE;
+            scheduler.AddAction(HOUSEKEEPING, HK_Loop);
             EFU_Ready = 0;
             log_debug("FTR Enter Idle");
         }
@@ -122,7 +123,7 @@ void StratoDIB::FlightFTR()
         FTR_Off();
         FiberSwitch_EFU(); 
         inst_substate = FTR_IDLE;
-        SetAction(HOUSEKEEPING);
+        //SetAction(HOUSEKEEPING);
         scheduler.AddAction(IDLE_EXIT, Idle_Period);
         
         if (EFU_Ready){
@@ -131,6 +132,13 @@ void StratoDIB::FlightFTR()
             log_nominal("Enterering EFU State");
         }
         break;
+
+        if (CheckAction(HOUSEKEEPING)){
+            log_debug("Sending Housekeeping");
+            XMLHeader();
+            zephyrTX.TM();
+            scheduler.AddAction(HOUSEKEEPING, HK_Loop);
+        }
 
     case FTR_IDLE:
         
@@ -210,11 +218,11 @@ void StratoDIB::FlightFTR()
             switch(ftr_status){
             case FTR_READY: //if status byte shows data ready
                 log_nominal("stat ready");
-                SetAction(FTR_SCAN);
-                scheduler.AddAction(BUILD_TELEM, Measure_Period);
+                SetAction(FTR_SCAN); //do ftr scan since FTR status indicates that the first scan is ready
+                scheduler.AddAction(BUILD_TELEM, Measure_Period); //Set timer for when to end the measurement period
                 inst_substate = FTR_MEASURE;
-                Stokes_Counter = 0;
-                Astokes_Counter = 0;
+                Stokes_Counter = 0; //counter that keeps track of how many total stokes scan have been averaged
+                Astokes_Counter = 0;//counter that keeps track of how many total antistokes scan have been averaged
                 log_debug("Entering Measure State");
                 break;
 
@@ -223,6 +231,7 @@ void StratoDIB::FlightFTR()
                 scheduler.AddAction(CHECK_FTR_STATUS,Status_Loop);
                 Stat_Counter ++;
                 Serial.println(Stat_Counter);
+                break;
                 
             case FTR_ERROR: //if status byte is out of bounds
                 log_error("stat error");
@@ -237,7 +246,7 @@ void StratoDIB::FlightFTR()
                 break;  
            } 
 
-            if(Stat_Counter >= Stat_Limit){ //if counter shows FTR status byte as stale
+            if(Stat_Counter >= Stat_Limit){ //if status counter exceeds Status limit then restart FTR
                 log_error("stat timeout");
                 ZephyrLogCrit("FTR status failure");
                 SetAction(POWERON_FTR);

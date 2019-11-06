@@ -157,9 +157,20 @@ bool StratoDIB::TCHandler(Telecommand_t telecommand)
         break;
     case FTRCYCLETIME: 
         Idle_Period = dibParam.ftrCycleTime;
+        break;
+    case SETDIBHKPERIOD: 
+        HK_Loop = dibParam.hkPeriod;
+        break;
+    case FTRSTATUSLIMIT: 
+        Stat_Limit = dibParam.statusLimit;
+        break;
+    case RAMANLEN:
+        RamanLength = dibParam.ramanScanLength;
     case EXITERROR:
         SetAction(EXIT_ERROR_STATE);
         break;
+    //Raman length telecommand needed
+
     default:
         log_error("Unknown TC received");
         // error case here

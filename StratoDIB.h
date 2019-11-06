@@ -138,9 +138,9 @@ private:
     void EFUWatch(); //Sets EFU ready flag when predetermined minute is reached
 
     //Timing Variables
-    uint16_t Measure_Period = 6*60; //10 minutes nominally
-    uint16_t HK_Loop = 90; //number of seconds between idle HK data retreival
-    uint16_t Idle_Period = 60; //Should be opposite duty cycle of measure period minus Start_EFU_Period telemetry period
+    uint16_t Measure_Period = 10*60; //10 minutes nominally
+    uint16_t HK_Loop = 120; //number of seconds between idle HK data retreival
+    uint16_t Idle_Period = 4*60; //Should be opposite duty cycle of measure period minus Start_EFU_Period telemetry period
     uint16_t Stat_Limit = 300/20; //number of FTR status requests before timeout and FTR3000 reset
     
     int Status_Loop = 20; // number of seconds between FTR status requests
