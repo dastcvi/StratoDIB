@@ -87,6 +87,10 @@ enum FTRStatus_t : uint8_t {
     FTR_ERROR
 };
 
+enum FTRMeasureType_t : uint8_t {
+    BURST,
+    AVERAGE,
+};
 
 class StratoDIB : public StratoCore {
 public:
@@ -102,7 +106,7 @@ public:
     // called in each main loop
     void RunMCBRouter();
 
-     void RunEFURouter();
+    void RunEFURouter();
 
 private:
     // instances
@@ -140,8 +144,8 @@ private:
     //Timing Variables
     uint16_t Measure_Period = 10*60; //10 minutes nominally
     uint16_t HK_Loop = 120; //number of seconds between idle HK data retreival
-    uint16_t Idle_Period = 4*60; //Should be opposite duty cycle of measure period minus Start_EFU_Period telemetry period
-    uint16_t Stat_Limit = 300/20; //number of FTR status requests before timeout and FTR3000 reset
+    uint16_t Idle_Period = 5*60; //Should be opposite duty cycle of measure period minus Start_EFU_Period telemetry period
+    uint16_t Stat_Limit = 300/20; //number of FTR status requests before timeout and FTR3000 reset (nominally 5mins/20second requests = 15)
     
     int Status_Loop = 20; // number of seconds between FTR status requests
     int Scan_Loop = 120; //number of seconds per scan. FTR3000 scan time hardset to 2minutes.
@@ -150,7 +154,9 @@ private:
     int EFU_Counter = 0;
     int Scan_Counter = 0; //number of 2 minute FTR3000 scans attempted
     uint8_t EthernetCount = 0; 
-
+    int Burst_Counter = 0;
+    uint8_t Burst_Limit = 8; //8, 2min scans = 16 minutes
+    
     //Operational Flags
     bool EFU_Ready = false; 
     bool EFU_Received = false;
@@ -158,6 +164,7 @@ private:
     
     //State variables
     uint8_t ftr_status;
+    uint8_t measure_type = AVERAGE;
 
     //Data Variables
     float FOTS1Therm;

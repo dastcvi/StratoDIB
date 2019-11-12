@@ -166,6 +166,11 @@ bool StratoDIB::TCHandler(Telecommand_t telecommand)
         break;
     case RAMANLEN:
         RamanLength = dibParam.ramanScanLength;
+        break;
+    case SETMEASURETYPE:
+        measure_type = dibParam.ftrMeasureType;
+        Burst_Limit = dibParam.ftrBurstLim;
+        break;
     case EXITERROR:
         SetAction(EXIT_ERROR_STATE);
         break;
@@ -426,7 +431,6 @@ void StratoDIB::SendMCBTM(StateFlag_t state_flag, String message)
     }
 }
 
-
 // --------------------------------------------------------
 // Hardware Operation Functions
 // --------------------------------------------------------
@@ -476,11 +480,11 @@ void StratoDIB::FiberSwitch_FTR(){
 
 void StratoDIB::FTRStatusReport(uint8_t status){
 
-    if((status == 0x27) || (status == 0x00)){
+    if((status == 0x27) || (status == 0x00) || (status == 0x07)){
         ftr_status = FTR_NOTREADY;
     }
 
-    else if((status == 0x57) || (status == 0x67) || (status == 0x17)){
+    else if((status == 0x57) || (status == 0x67) || (status == 0x17)) {
         ftr_status = FTR_READY;
     }
 
@@ -638,6 +642,8 @@ void StratoDIB::XMLHeader(){
 
     ReadFullTemps();
     ReadVoltages();
+    
+    //float unixtime = now();
 
     String Message = "";
     bool flag1 = true;
@@ -665,6 +671,8 @@ void StratoDIB::XMLHeader(){
         zephyrTX.setStateFlagValue(1, WARN);
     }
 
+    Message.concat(now());
+    Message.concat(',');
     Message.concat(FOTS1Therm);
     Message.concat(',');
     Message.concat(FOTS2Therm);

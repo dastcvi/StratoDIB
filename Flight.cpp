@@ -223,6 +223,7 @@ void StratoDIB::FlightFTR()
                 inst_substate = FTR_MEASURE;
                 Stokes_Counter = 0; //counter that keeps track of how many total stokes scan have been averaged
                 Astokes_Counter = 0;//counter that keeps track of how many total antistokes scan have been averaged
+                Burst_Counter = 0;
                 log_debug("Entering Measure State");
                 break;
 
@@ -257,80 +258,173 @@ void StratoDIB::FlightFTR()
 
     case FTR_MEASURE:
 
-        if (EFU_Ready){
+        switch(measure_type){   
 
-            SetAction(BUILD_TELEM);
-            SetAction(LISTEN_EFU); //goes into EFU substate and starts EFU comms
-            inst_substate = FTR_EFU;
-            log_nominal("Enterering EFU State");
-        }
+        case BURST:
 
-        if (CheckAction(HOUSEKEEPING)){
-            log_debug("Sending Housekeeping");
-            XMLHeader();
-            zephyrTX.TM();
-            scheduler.AddAction(HOUSEKEEPING, HK_Loop);
-        }
+            if (EFU_Ready){
 
-        if(CheckAction(FTR_SCAN)){
-            
-            ftr.resetFtrSpi();
-
-            //get raman data and parse to stokes and antistokes arrays
-            ftr.readRaman(RamanBin);
-            ftr.BintoArray(RamanBin, Stokes, Astokes, RamanLength);
-            ftr.ClearArray(RamanBin, 17000);
-
-            //Co-add arrays and keep track of coadd number for each index point
-            Stokes_Counter += ftr.RamanCoAdd(StokesElements, Stokes, StokesAvg, RamanLength);
-            ftr.ClearArray(Stokes, RamanLength);
-            Astokes_Counter += ftr.RamanCoAdd(AstokesElements, Astokes, AStokesAvg, RamanLength);
-            ftr.ClearArray(Astokes, RamanLength);
-
-            scheduler.AddAction(FTR_SCAN, Scan_Loop);
-        }
-
-        if(CheckAction(BUILD_TELEM)){
-
-            XMLHeader();
-            ftr.RamanAverage(StokesElements, StokesAvg, Stokes, RamanLength);
-            zephyrTX.addTm(Stokes_Counter);
-            zephyrTX.addTm(Stokes, RamanLength);
-            ftr.RamanAverage(AstokesElements,AStokesAvg, Astokes, RamanLength);
-            zephyrTX.addTm(Astokes_Counter);
-            zephyrTX.addTm(Astokes, RamanLength);
-
-            SetAction(SEND_TELEM);
-              
-        } 
-
-        if(CheckAction(SEND_TELEM)){   
-            
-            zephyrTX.TM();
-
-            if (ACK == TM_ack_flag) {
-                
-                zephyrTX.clearTm();
-                ftr.ClearArray(Stokes, RamanLength);
-                ftr.ClearArray(Astokes, RamanLength);
-
-                if(inst_substate == FTR_MEASURE){
-                    inst_substate = FTR_ENTRY;
-                }
-                
-        
-            } else if (NAK == TM_ack_flag) {
-            // attempt one resend
-                log_debug("NAK resending TM");
-                zephyrTX.TM();
-                zephyrTX.clearTm();
-                ftr.ClearArray(Stokes, RamanLength);
-                ftr.ClearArray(Astokes, RamanLength);
-
-                if(inst_substate == FTR_MEASURE){
-                    inst_substate = FTR_ENTRY;
-                }
+                SetAction(BUILD_TELEM);
+                SetAction(LISTEN_EFU); //goes into EFU substate and starts EFU comms
+                inst_substate = FTR_EFU;
+                log_nominal("Enterering EFU State");
             }
+
+            if (CheckAction(HOUSEKEEPING)){
+                log_debug("Sending Housekeeping");
+                XMLHeader();
+                zephyrTX.TM();
+                scheduler.AddAction(HOUSEKEEPING, HK_Loop);
+            }
+
+            if(CheckAction(FTR_SCAN)){
+                
+                ftr.resetFtrSpi();
+
+                //get raman data and parse to stokes and antistokes arrays
+                ftr.readRaman(RamanBin);
+                ftr.BintoArray(RamanBin, Stokes, Astokes, RamanLength);
+                ftr.ClearArray(RamanBin, 17000);
+
+                //Co-add arrays and keep track of coadd number for each index point
+                Stokes_Counter += ftr.RamanCoAdd(StokesElements, Stokes, StokesAvg, RamanLength);
+                ftr.ClearArray(Stokes, RamanLength);
+                Astokes_Counter += ftr.RamanCoAdd(AstokesElements, Astokes, AStokesAvg, RamanLength);
+                ftr.ClearArray(Astokes, RamanLength);
+
+                SetAction(BUILD_TELEM);
+            }
+
+            if(CheckAction(BUILD_TELEM)){
+
+                XMLHeader();
+                ftr.RamanAverage(StokesElements, StokesAvg, Stokes, RamanLength);
+                zephyrTX.addTm(Stokes_Counter);
+                zephyrTX.addTm(Stokes, RamanLength);
+                ftr.RamanAverage(AstokesElements,AStokesAvg, Astokes, RamanLength);
+                zephyrTX.addTm(Astokes_Counter);
+                zephyrTX.addTm(Astokes, RamanLength);
+
+                SetAction(SEND_TELEM);
+                
+            } 
+
+            if(CheckAction(SEND_TELEM)){   
+                
+                Burst_Counter ++;
+                zephyrTX.TM();
+
+
+                if (ACK == TM_ack_flag) {
+                    
+                    zephyrTX.clearTm();
+                    ftr.ClearArray(Stokes, RamanLength);
+                    ftr.ClearArray(Astokes, RamanLength);
+
+
+                } else if (NAK == TM_ack_flag) {
+                // attempt one resend
+                    log_debug("NAK resending TM");
+                    zephyrTX.TM();
+                    zephyrTX.clearTm();
+                    ftr.ClearArray(Stokes, RamanLength);
+                    ftr.ClearArray(Astokes, RamanLength);
+
+                    if(inst_substate == FTR_MEASURE){
+                        inst_substate = FTR_ENTRY;
+                    }
+                }
+
+                inst_substate = (Burst_Counter < Burst_Limit) && (inst_substate == FTR_MEASURE) ? FTR_MEASURE: FTR_ENTRY;
+            }
+
+            break;
+
+        case AVERAGE:
+
+            if (EFU_Ready){
+
+                SetAction(BUILD_TELEM);
+                SetAction(LISTEN_EFU); //goes into EFU substate and starts EFU comms
+                inst_substate = FTR_EFU;
+                log_nominal("Enterering EFU State");
+            }
+
+            if (CheckAction(HOUSEKEEPING)){
+                log_debug("Sending Housekeeping");
+                XMLHeader();
+                zephyrTX.TM();
+                scheduler.AddAction(HOUSEKEEPING, HK_Loop);
+            }
+
+            if(CheckAction(FTR_SCAN)){
+                
+                ftr.resetFtrSpi();
+
+                //get raman data and parse to stokes and antistokes arrays
+                ftr.readRaman(RamanBin);
+                ftr.BintoArray(RamanBin, Stokes, Astokes, RamanLength);
+                ftr.ClearArray(RamanBin, 17000);
+
+                //Co-add arrays and keep track of coadd number for each index point
+                Stokes_Counter += ftr.RamanCoAdd(StokesElements, Stokes, StokesAvg, RamanLength);
+                ftr.ClearArray(Stokes, RamanLength);
+                Astokes_Counter += ftr.RamanCoAdd(AstokesElements, Astokes, AStokesAvg, RamanLength);
+                ftr.ClearArray(Astokes, RamanLength);
+
+                scheduler.AddAction(FTR_SCAN, Scan_Loop);
+            }
+
+            if(CheckAction(BUILD_TELEM)){
+
+                XMLHeader();
+                ftr.RamanAverage(StokesElements, StokesAvg, Stokes, RamanLength);
+                zephyrTX.addTm(Stokes_Counter);
+                zephyrTX.addTm(Stokes, RamanLength);
+                ftr.RamanAverage(AstokesElements,AStokesAvg, Astokes, RamanLength);
+                zephyrTX.addTm(Astokes_Counter);
+                zephyrTX.addTm(Astokes, RamanLength);
+
+                SetAction(SEND_TELEM);
+                
+            } 
+
+            if(CheckAction(SEND_TELEM)){   
+                
+                zephyrTX.TM();
+
+                if (ACK == TM_ack_flag) {
+                    
+                    zephyrTX.clearTm();
+                    ftr.ClearArray(Stokes, RamanLength);
+                    ftr.ClearArray(Astokes, RamanLength);
+
+                    if(inst_substate == FTR_MEASURE){
+                        inst_substate = FTR_ENTRY;
+                    }
+                    
+            
+                } else if (NAK == TM_ack_flag) {
+                // attempt one resend
+                    log_debug("NAK resending TM");
+                    zephyrTX.TM();
+                    zephyrTX.clearTm();
+                    ftr.ClearArray(Stokes, RamanLength);
+                    ftr.ClearArray(Astokes, RamanLength);
+
+                    if(inst_substate == FTR_MEASURE){
+                        inst_substate = FTR_ENTRY;
+                    }
+                }
+    
+            }
+            break;
+
+        default:
+            ZephyrLogCrit("FTR measure type unknown, reset to ave");
+            measure_type = AVERAGE;
+            inst_substate = FTR_WARMUP;
+            break;
         }
 
         break;    
