@@ -18,7 +18,7 @@
 #include "EFUComm.h"
 #include <LTC2983Manager.h>
 #include <FTR3000.h>
-#include <Ethernet.h> 
+#include <Ethernet.h>
 
 
 #define INSTRUMENT      FLOATS
@@ -43,6 +43,7 @@ enum ScheduleAction_t : uint8_t {
     RESEND_MCB_LP,
     RESEND_MOTION_COMMAND,
     RESEND_TM,
+    RESEND_FULL_RETRACT,
     EXIT_ERROR_STATE,
 
     // internal command actions
@@ -62,7 +63,7 @@ enum ScheduleAction_t : uint8_t {
     LISTEN_EFU,
     BUILD_TELEM,
     SEND_TELEM,
-    
+
     // used for tracking
     NUM_ACTIONS
 };
@@ -146,22 +147,22 @@ private:
     uint16_t HK_Loop = 120; //number of seconds between idle HK data retreival
     uint16_t Idle_Period = 5*60; //Should be opposite duty cycle of measure period minus Start_EFU_Period telemetry period
     uint16_t Stat_Limit = 300/20; //number of FTR status requests before timeout and FTR3000 reset (nominally 5mins/20second requests = 15)
-    
+
     int Status_Loop = 20; // number of seconds between FTR status requests
     int Scan_Loop = 120; //number of seconds per scan. FTR3000 scan time hardset to 2minutes.
     int Stat_Counter = 0; //number of times status is requested prior to entering measurement state or resetting FTR3000
     int EFU_Loop = 15; //number of seconds between EFU retrieval attempts during EFU telemetry state
     int EFU_Counter = 0;
     int Scan_Counter = 0; //number of 2 minute FTR3000 scans attempted
-    uint8_t EthernetCount = 0; 
+    uint8_t EthernetCount = 0;
     int Burst_Counter = 0;
     uint8_t Burst_Limit = 8; //8, 2min scans = 16 minutes
-    
+
     //Operational Flags
-    bool EFU_Ready = false; 
+    bool EFU_Ready = false;
     bool EFU_Received = false;
     bool EnterMeasure = 0;
-    
+
     //State variables
     uint8_t ftr_status;
     uint8_t measure_type = AVERAGE;
@@ -189,7 +190,7 @@ private:
     float AStokesAvg[2200]; //antistokes Co-add values that will be averaging using the elements array and passed as TM
     uint16_t Stokes_Counter = 0;
     uint16_t Astokes_Counter = 0;
-    
+
 
     //Route and Handle messages from EFUComm
     void HandleEFUBin();
@@ -238,6 +239,7 @@ private:
     // flags for MCB state tracking
     bool mcb_low_power = false;
     bool mcb_motion_ongoing = false;
+    bool mcb_reeling_in = false;
 
     // uint32_t start time of the current profile in millis
     uint32_t profile_start = 0;
