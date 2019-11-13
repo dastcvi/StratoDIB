@@ -31,7 +31,7 @@ void StratoDIB::InstrumentSetup()
 {
 
     SPI.begin(); //SPI0 for DIB rev B and C
-    
+
     // for RS232 transceiver
     pinMode(FORCEOFF_232, OUTPUT);
     pinMode(FORCEON_232, OUTPUT);
@@ -48,7 +48,7 @@ void StratoDIB::InstrumentSetup()
 
     pinMode(Switch2_FTR, OUTPUT);
     digitalWrite(Switch2_FTR,LOW); //only momentary HIGH needed to activate
-    
+
     pinMode(SwitchStatus_EFU, INPUT); //HIGH/LOW signal for switch state
     pinMode(SwitchStatus_FTR, INPUT); //HIGH/LOW signal for switch state
 
@@ -143,6 +143,21 @@ bool StratoDIB::TCHandler(Telecommand_t telecommand)
     case ZEROREEL:
         mcbComm.TX_ASCII(MCB_ZERO_REEL); // todo: verification + ack
         break;
+    case TEMPLIMITS:
+        if (!mcbComm.TX_Temp_Limits(mcbParam.tempLimits[0],mcbParam.tempLimits[1],mcbParam.tempLimits[2],mcbParam.tempLimits[3],mcbParam.tempLimits[4],mcbParam.tempLimits[5])) {
+            ZephyrLogWarn("Error sending temperature limits to MCB");
+        }
+        break;
+    case TORQUELIMITS:
+        if (!mcbComm.TX_Torque_Limits(mcbParam.torqueLimits[0],mcbParam.torqueLimits[1])) {
+            ZephyrLogWarn("Error sending torque limits to MCB");
+        }
+        break;
+    case CURRLIMITS:
+        if (!mcbComm.TX_Curr_Limits(mcbParam.currLimits[0],mcbParam.currLimits[1])) {
+            ZephyrLogWarn("Error sending curr limits to MCB");
+        }
+        break;
     // Non-MCB Telecommands -------------------------------
     case GOFTRFLIGHT:
         flight_submode = FTR_SUBMODE;
@@ -155,13 +170,13 @@ bool StratoDIB::TCHandler(Telecommand_t telecommand)
     case FTRONTIME:
         Measure_Period = dibParam.ftrOnTime;
         break;
-    case FTRCYCLETIME: 
+    case FTRCYCLETIME:
         Idle_Period = dibParam.ftrCycleTime;
         break;
-    case SETDIBHKPERIOD: 
+    case SETDIBHKPERIOD:
         HK_Loop = dibParam.hkPeriod;
         break;
-    case FTRSTATUSLIMIT: 
+    case FTRSTATUSLIMIT:
         Stat_Limit = dibParam.statusLimit;
         break;
     case RAMANLEN:
@@ -312,9 +327,25 @@ void StratoDIB::HandleMCBAck()
         if (MOTION_DOCK == mcb_motion) NoteProfileStart();
         break;
     case MCB_IN_ACC:
+        ZephyrLogFine("MCB acked retract acc");
+        break;
     case MCB_OUT_ACC:
+        ZephyrLogFine("MCB acked deploy acc");
+        break;
     case MCB_DOCK_ACC:
-        // currently not handled, though received
+        ZephyrLogFine("MCB acked dock acc");
+        break;
+    case MCB_ZERO_REEL:
+        ZephyrLogFine("MCB acked zero reel");
+        break;
+    case MCB_TEMP_LIMITS:
+        ZephyrLogFine("MCB acked temp limits");
+        break;
+    case MCB_TORQUE_LIMITS:
+        ZephyrLogFine("MCB acked torque limits");
+        break;
+    case MCB_CURR_LIMITS:
+        ZephyrLogFine("MCB acked curr limits");
         break;
     default:
         log_error("Unknown MCB ack received");
@@ -437,7 +468,7 @@ void StratoDIB::SendMCBTM(StateFlag_t state_flag, String message)
 
 void StratoDIB::FTR_On(){
     digitalWrite(FTR_POWER, LOW);
-    log_debug("FTR Powered On");     
+    log_debug("FTR Powered On");
 }
 
 void StratoDIB::FTR_Off(){
@@ -475,7 +506,7 @@ void StratoDIB::FiberSwitch_FTR(){
             break;
           }
         }
-        digitalWrite(Switch2_FTR,LOW);       
+        digitalWrite(Switch2_FTR,LOW);
 }
 
 void StratoDIB::FTRStatusReport(uint8_t status){
@@ -520,7 +551,7 @@ void StratoDIB::ReadFullTemps() {
   noInterrupts();
   ltcManager.WakeUp();
   uint16_t ret = ltcManager.CheckStatusReg();
-  
+
   if ((ret == 0) || (ret == 0xFF)) {
     //Serial.println("Error reading status register, resetting LTC");
     ltcManager.channel_assignments[FOTS1_THERM_CH]  = THERMISTOR_44006;
@@ -549,14 +580,14 @@ void StratoDIB::ReadFullTemps() {
 
 void StratoDIB::ReadVoltages(){
 
-  float val = analogRead(VMON_15V);  
-  //V_Zephyr = (val*(3.0/1023.0))*((10000.0+995.0)/995.0); 
-  V_Zephyr = (val*(3.3/1023.0))*((10000.0+1100.0)/1100.0); 
-  val = analogRead(VMON_3V3);  
+  float val = analogRead(VMON_15V);
+  //V_Zephyr = (val*(3.0/1023.0))*((10000.0+995.0)/995.0);
+  V_Zephyr = (val*(3.3/1023.0))*((10000.0+1100.0)/1100.0);
+  val = analogRead(VMON_3V3);
   V_3v3 = (val*(3.3/1023.0))*((10000.0+10000.0)/10000.0);
-  val = analogRead(VMON_5V);  
+  val = analogRead(VMON_5V);
   V_5TX = (val*(3.3/1023.0))*((10000.0+1100.0)/1100.0);
-  val = analogRead(VMON_12V); 
+  val = analogRead(VMON_12V);
   V_12FTR = (val*(3.3/1023.0))*((10000.0+1100.0)/1100.0);
 }
 
@@ -577,14 +608,14 @@ void StratoDIB::EFUWatch(){
 }
 
 void StratoDIB::RunEFURouter(){
-    
+
     SerialMessage_t EFU_msg = efucomm.RX();
-    
+
     while (NO_MESSAGE != EFU_msg) {
         if (ASCII_MESSAGE == EFU_msg) {
-            
+
         } else if (ACK_MESSAGE == EFU_msg) {
-            
+
         } else if (BIN_MESSAGE == EFU_msg) {
             HandleEFUBin();
         } else {
@@ -599,7 +630,7 @@ void StratoDIB::RunEFURouter(){
 void StratoDIB:: HandleEFUBin(){
 
     //if(efucomm.binary_rx.checksum_valid){ // to do: possible problem with EFU side checksum
-    
+
         switch (efucomm.binary_rx.bin_id) {
         case EFU_DATA_RECORD:
             AddEFUTM();
@@ -615,7 +646,7 @@ void StratoDIB:: HandleEFUBin(){
         zephyrTX.setStateFlagValue(1, FINE);
         zephyrTX.setStateDetails(1, "EFU1"); //to do: add FLOATS HK here
         zephyrTX.setStateFlagValue(2, FINE);
-        zephyrTX.setStateDetails(2, "EFU2"); //to do: add FLOATS HK here  
+        zephyrTX.setStateDetails(2, "EFU2"); //to do: add FLOATS HK here
         zephyrTX.TM();
 //}
 
@@ -642,13 +673,13 @@ void StratoDIB::XMLHeader(){
 
     ReadFullTemps();
     ReadVoltages();
-    
+
     //float unixtime = now();
 
     String Message = "";
     bool flag1 = true;
     bool flag2 = true;
-    
+
     /* Check the values for the TM message header */
     if ((DC_DC_Therm > 60.0) || (DC_DC_Therm < -30.0))
         flag1 = false;
@@ -656,7 +687,7 @@ void StratoDIB::XMLHeader(){
         flag1 = false;
     if ((FOTS2Therm > 60.0) || (FOTS2Therm < -30.0))
         flag1 = false;
- 
+
 
     /*Check Voltages are in range */
     if ((V_Zephyr > 19.0) || (V_Zephyr < 12.0))
@@ -686,14 +717,14 @@ void StratoDIB::XMLHeader(){
     Message.concat(RTD2);
     zephyrTX.setStateDetails(1, Message);
     Message = "";
-    
+
     // Second Field
     if (flag2) {
         zephyrTX.setStateFlagValue(2, FINE);
     } else {
         zephyrTX.setStateFlagValue(2, WARN);
     }
-    
+
     Message.concat(V_Zephyr);
     Message.concat(',');
     Message.concat(V_3v3);
