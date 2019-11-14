@@ -24,6 +24,7 @@ enum FLStatesFTR_t : uint8_t {
     FTR_EFU, //FLOATS is waiting to recieve EFU telemetry based on a synced time
     FTR_SEND_EFU,
     FTR_VERIFY_EFU,
+    FTR_FINISH_EFU,
     FTR_SEND_TELEMETRY,
 
     // ----------------------------------------------------
@@ -111,6 +112,7 @@ void StratoDIB::FlightFTR()
     case FTR_EFU:
         // if the EFURouter found a packet, send it as a TM
         if (EFU_Received) {
+            zephyrTX.clearTm();
             AddEFUTM();
             zephyrTX.setStateFlagValue(1, FINE);
             zephyrTX.setStateDetails(1, "EFU1"); //to do: add FLOATS HK here
@@ -136,11 +138,11 @@ void StratoDIB::FlightFTR()
 
     case FTR_VERIFY_EFU:
         if (ACK == TM_ack_flag) {
-            inst_substate = FTR_GPS_WAIT;
+            inst_substate = FTR_FINISH_EFU;
         } else if (NAK == TM_ack_flag) {
             zephyrTX.TM();
             log_error("Needed to resend EFU TM");
-            inst_substate = FTR_GPS_WAIT;
+            inst_substate = FTR_FINISH_EFU;
         } else if (CheckAction(RESEND_TM)) {
             if (resend_attempted) {
                 resend_attempted = false;
@@ -148,6 +150,11 @@ void StratoDIB::FlightFTR()
                 resend_attempted = true;
             }
         }
+        break;
+
+    case FTR_FINISH_EFU:
+        if (!EFU_Ready) inst_substate = FTR_GPS_WAIT;
+        break;
 
     case FTR_ENTER_IDLE:
 

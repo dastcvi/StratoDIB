@@ -600,7 +600,7 @@ void StratoDIB::ReadVoltages(){
 
 void StratoDIB::EFUWatch(){
 
-    if(minute()==57){
+    if(minute()==23){
         EFU_Ready = true;
     }
 
