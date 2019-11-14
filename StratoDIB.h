@@ -151,7 +151,7 @@ private:
     int Status_Loop = 20; // number of seconds between FTR status requests
     int Scan_Loop = 120; //number of seconds per scan. FTR3000 scan time hardset to 2minutes.
     int Stat_Counter = 0; //number of times status is requested prior to entering measurement state or resetting FTR3000
-    int EFU_Loop = 15; //number of seconds between EFU retrieval attempts during EFU telemetry state
+    int EFU_Loop = 1; //number of seconds between EFU retrieval attempts during EFU telemetry state
     int EFU_Counter = 0;
     int Scan_Counter = 0; //number of 2 minute FTR3000 scans attempted
     uint8_t EthernetCount = 0;

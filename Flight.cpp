@@ -103,6 +103,8 @@ void StratoDIB::FlightFTR()
             //EFUrouter is always running in Main loop and will only make EFU comms when in this configuration
             FTR_Off();
             FiberSwitch_EFU();
+            delay(10);
+            //EFU_SERIAL.flush();
             scheduler.AddAction(LISTEN_EFU, EFU_Loop);
         }
 
@@ -113,7 +115,7 @@ void StratoDIB::FlightFTR()
 
         if(EFU_Ready==0){ //if EFUWatch expires but EFU telemetry was not received
             log_debug("EFU not received, EFU telem timeout");
-            ZephyrLogWarn("FTR status failure");
+            ZephyrLogWarn("EFU telem failure");
             inst_substate = FTR_GPS_WAIT;
         }
         break;   
@@ -129,10 +131,9 @@ void StratoDIB::FlightFTR()
         if (EFU_Ready){
             SetAction(LISTEN_EFU);
             inst_substate = FTR_EFU;
-            log_nominal("Enterering EFU State");
+            log_nominal("Entering EFU State");
         }
-        break;
-
+       
         if (CheckAction(HOUSEKEEPING)){
             log_debug("Sending Housekeeping");
             XMLHeader();
@@ -140,12 +141,14 @@ void StratoDIB::FlightFTR()
             scheduler.AddAction(HOUSEKEEPING, HK_Loop);
         }
 
+        break;
+
     case FTR_IDLE:
         
         if (EFU_Ready){
             SetAction(LISTEN_EFU); //goes into EFU substate and starts EFU comms
             inst_substate = FTR_EFU;
-            log_nominal("Enterering EFU State");
+            log_nominal("Entering EFU State");
         }
 
         if (CheckAction(HOUSEKEEPING)){

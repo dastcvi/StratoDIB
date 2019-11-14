@@ -598,7 +598,7 @@ void StratoDIB::ReadVoltages(){
 
 void StratoDIB::EFUWatch(){
 
-    if(minute()==46){
+    if(minute()==25){
         EFU_Ready = true;
     }
 
@@ -630,40 +630,71 @@ void StratoDIB::RunEFURouter(){
 void StratoDIB:: HandleEFUBin(){
 
     //if(efucomm.binary_rx.checksum_valid){ // to do: possible problem with EFU side checksum
-
         switch (efucomm.binary_rx.bin_id) {
         case EFU_DATA_RECORD:
             AddEFUTM();
+            EFU_Received = 1;
+            log_nominal("EFU bin handled and sent via TM");
+
+            //if checksum is good send TM packet
+            zephyrTX.setStateFlagValue(1, FINE);
+            zephyrTX.setStateDetails(1, "EFU1"); //to do: add FLOATS HK here
+            zephyrTX.setStateFlagValue(2, FINE);
+            zephyrTX.setStateDetails(2, "EFU2"); //to do: add FLOATS HK here
+            zephyrTX.TM();
+
+
+            if (ACK == TM_ack_flag) {
+                    
+                    zephyrTX.clearTm();
+                                
+            } else if (NAK == TM_ack_flag) {
+                // attempt one resend
+                    log_debug("NAK resending TM");
+                    zephyrTX.TM();
+                    zephyrTX.clearTm();   
+            }
+  
             break;
         default:
+
             log_error("Unknown EFU bin received");
-        }
 
-        EFU_Received = 1;
-        log_nominal("EFU bin handled and sent via TM");
+            if(second()==59){
 
-        //if checksum is good send TM packet
-        zephyrTX.setStateFlagValue(1, FINE);
-        zephyrTX.setStateDetails(1, "EFU1"); //to do: add FLOATS HK here
-        zephyrTX.setStateFlagValue(2, FINE);
-        zephyrTX.setStateDetails(2, "EFU2"); //to do: add FLOATS HK here
-        zephyrTX.TM();
-//}
+                AddEFUTM();
+                zephyrTX.setStateFlagValue(1, WARN);
+                zephyrTX.setStateDetails(1, "EFU last mess");
+                zephyrTX.setStateFlagValue(2, WARN);
+                zephyrTX.setStateDetails(2, ""); 
+                zephyrTX.TM();
 
+                if (ACK == TM_ack_flag) {
+                    zephyrTX.clearTm();
+                                
+                } else if (NAK == TM_ack_flag) {
+                // attempt one resend
+                    log_debug("NAK resending TM");
+                    zephyrTX.TM();
+                    zephyrTX.clearTm();   
+                }
 
+            }
+
+        }    
+    //}
 }
 
 void StratoDIB::AddEFUTM()
 {
    // add each byte of data to the message
-    for (int i = 0; i < efucomm.binary_rx.bin_length; i++) {
+    for (int i = 0; i < 2048; i++) {
         if (!zephyrTX.addTm(efucomm.binary_rx.bin_buffer[i])) {
             log_error("unable to add data byte to EFU TM buffer");
             return;
         }
     }
 }
-
 
 // ------------------------------------------------------
 // Handle FTR3000 Data
