@@ -42,9 +42,9 @@
 #endif
 
 #ifndef SERIAL3_RX_BUFFER_SIZE
-#error "Need to redefine the Serial3 buffer size to 64"
-#elif SERIAL3_RX_BUFFER_SIZE != 64
-#error "Serial3 buffer should be 64 bytes"
+#error "Need to redefine the Serial3 buffer size to 2048"
+#elif SERIAL3_RX_BUFFER_SIZE != 2048
+#error "Serial3 buffer should be 2048 bytes"
 #endif
 
 #ifndef SERIAL4_RX_BUFFER_SIZE

@@ -19,8 +19,11 @@ enum FLStatesFTR_t : uint8_t {
     FTR_ENTER_IDLE, //Fiber switch to EFU, turn off FTR, configure LTC chip
     FTR_IDLE, //FLOATS is between measurements and listening for EFU errors
     FTR_WARMUP, //Warmup state for FTR3000 (checks FTR status byte)
-    FTR_MEASURE, //Measurement operations 
+    FTR_MEASURE, //Measurement operations
+    FTR_EFU_START,
     FTR_EFU, //FLOATS is waiting to recieve EFU telemetry based on a synced time
+    FTR_SEND_EFU,
+    FTR_VERIFY_EFU,
     FTR_SEND_TELEMETRY,
 
     // ----------------------------------------------------
@@ -85,6 +88,7 @@ void StratoDIB::FlightFTR()
         inst_substate = FTR_GPS_WAIT;
 
         break;
+
     case FTR_GPS_WAIT:
         // wait for the first GPS message from Zephyr to set the time before moving on
         log_nominal("Waiting on GPS time");
@@ -96,21 +100,24 @@ void StratoDIB::FlightFTR()
         }
         break;
 
-    case FTR_EFU:
-        
-        if((CheckAction(LISTEN_EFU)) && (EFU_Received == 0)){ //if Listen EFU loop is scheduled and a EFU telemetry packet hasn't been successfully received
-            log_nominal("Listening for EFU");
-            //EFUrouter is always running in Main loop and will only make EFU comms when in this configuration
-            FTR_Off();
-            FiberSwitch_EFU();
-            delay(10);
-            //EFU_SERIAL.flush();
-            scheduler.AddAction(LISTEN_EFU, EFU_Loop);
-        }
+    case FTR_EFU_START:
+        // prep for EFU packets
+        FTR_Off();
+        FiberSwitch_EFU();
+        EFU_Received = 0;
+        inst_substate = FTR_EFU;
+        break;
 
-        if((EFU_Received) && (EFU_Ready == 0)){ //if the EFU packet was received successfully with EFUrouter and EFUWatch minute expires
-            log_debug("EFU received and going into GPS wait");
-            inst_substate = FTR_GPS_WAIT;
+    case FTR_EFU:
+        // if the EFURouter found a packet, send it as a TM
+        if (EFU_Received) {
+            AddEFUTM();
+            zephyrTX.setStateFlagValue(1, FINE);
+            zephyrTX.setStateDetails(1, "EFU1"); //to do: add FLOATS HK here
+            zephyrTX.setStateFlagValue(2, FINE);
+            zephyrTX.setStateDetails(2, "EFU2"); //to do: add FLOATS HK here
+            resend_attempted = false;
+            inst_substate = FTR_SEND_EFU;
         }
 
         if(EFU_Ready==0){ //if EFUWatch expires but EFU telemetry was not received
@@ -118,22 +125,43 @@ void StratoDIB::FlightFTR()
             ZephyrLogWarn("EFU telem failure");
             inst_substate = FTR_GPS_WAIT;
         }
-        break;   
+        break;
+
+    case FTR_SEND_EFU:
+        TM_ack_flag = NO_ACK;
+        zephyrTX.TM();
+        scheduler.AddAction(RESEND_TM,ZEPHYR_RESEND_TIMEOUT);
+        inst_substate = FTR_VERIFY_EFU;
+        break;
+
+    case FTR_VERIFY_EFU:
+        if (ACK == TM_ack_flag) {
+            inst_substate = FTR_GPS_WAIT;
+        } else if (NAK == TM_ack_flag) {
+            zephyrTX.TM();
+            log_error("Needed to resend EFU TM");
+            inst_substate = FTR_GPS_WAIT;
+        } else if (CheckAction(RESEND_TM)) {
+            if (resend_attempted) {
+                resend_attempted = false;
+            } else {
+                resend_attempted = true;
+            }
+        }
 
     case FTR_ENTER_IDLE:
-        
+
         FTR_Off();
-        FiberSwitch_EFU(); 
+        FiberSwitch_EFU();
         inst_substate = FTR_IDLE;
         //SetAction(HOUSEKEEPING);
         scheduler.AddAction(IDLE_EXIT, Idle_Period);
-        
+
         if (EFU_Ready){
-            SetAction(LISTEN_EFU);
-            inst_substate = FTR_EFU;
+            inst_substate = FTR_EFU_START;
             log_nominal("Entering EFU State");
         }
-       
+
         if (CheckAction(HOUSEKEEPING)){
             log_debug("Sending Housekeeping");
             XMLHeader();
@@ -144,10 +172,9 @@ void StratoDIB::FlightFTR()
         break;
 
     case FTR_IDLE:
-        
+
         if (EFU_Ready){
-            SetAction(LISTEN_EFU); //goes into EFU substate and starts EFU comms
-            inst_substate = FTR_EFU;
+            inst_substate = FTR_EFU_START;
             log_nominal("Entering EFU State");
         }
 
@@ -170,8 +197,7 @@ void StratoDIB::FlightFTR()
     case FTR_WARMUP:
 
         if (EFU_Ready){
-            SetAction(LISTEN_EFU); //goes into EFU substate and starts EFU comms
-            inst_substate = FTR_EFU;
+            inst_substate = FTR_EFU_START;
         }
 
         if (CheckAction(HOUSEKEEPING)){
@@ -190,27 +216,27 @@ void StratoDIB::FlightFTR()
             ftr.resetFtrSpi();
             ftr.start();
             scheduler.AddAction(CONFIGURE_FTR, 15);
-            EthernetCount = 0;  
+            EthernetCount = 0;
         }
-    
+
         if(CheckAction(CONFIGURE_FTR)){
             log_debug("Configuring FTR");
-            
+
             if(EthernetCount>=10){
                 log_debug("Ethernet Time out - resetting FTR");
                 SetAction(POWERON_FTR);
             }
-            
-            if(ftr.EthernetConnect()){ 
-                scheduler.AddAction(CHECK_FTR_STATUS, Status_Loop); 
+
+            if(ftr.EthernetConnect()){
+                scheduler.AddAction(CHECK_FTR_STATUS, Status_Loop);
                 Stat_Counter = 0;
-            } 
+            }
 
             else if(!ftr.EthernetConnect()){
-                scheduler.AddAction(CONFIGURE_FTR, 5); 
+                scheduler.AddAction(CONFIGURE_FTR, 5);
                 log_debug("Attempting to connect Ethernet");
                 EthernetCount++;
-            } 
+            }
         }
 
         if(CheckAction(CHECK_FTR_STATUS)){
@@ -236,19 +262,19 @@ void StratoDIB::FlightFTR()
                 Stat_Counter ++;
                 Serial.println(Stat_Counter);
                 break;
-                
+
             case FTR_ERROR: //if status byte is out of bounds
                 log_error("stat error");
                 scheduler.AddAction(CHECK_FTR_STATUS,Status_Loop);
                 Stat_Counter ++;
-                break;    
+                break;
 
             default:
                 log_error("stat unknown"); //if there isn't communication with FTR
                 scheduler.AddAction(CHECK_FTR_STATUS,Status_Loop);
                 Stat_Counter ++;
-                break;  
-           } 
+                break;
+           }
 
             if(Stat_Counter >= Stat_Limit){ //if status counter exceeds Status limit then restart FTR
                 log_error("stat timeout");
@@ -261,15 +287,14 @@ void StratoDIB::FlightFTR()
 
     case FTR_MEASURE:
 
-        switch(measure_type){   
+        switch(measure_type){
 
         case BURST:
 
             if (EFU_Ready){
 
                 SetAction(BUILD_TELEM);
-                SetAction(LISTEN_EFU); //goes into EFU substate and starts EFU comms
-                inst_substate = FTR_EFU;
+                inst_substate = FTR_EFU_START;
                 log_nominal("Enterering EFU State");
             }
 
@@ -281,7 +306,7 @@ void StratoDIB::FlightFTR()
             }
 
             if(CheckAction(FTR_SCAN)){
-                
+
                 ftr.resetFtrSpi();
 
                 //get raman data and parse to stokes and antistokes arrays
@@ -309,17 +334,17 @@ void StratoDIB::FlightFTR()
                 zephyrTX.addTm(Astokes, RamanLength);
 
                 SetAction(SEND_TELEM);
-                
-            } 
 
-            if(CheckAction(SEND_TELEM)){   
-                
+            }
+
+            if(CheckAction(SEND_TELEM)){
+
                 Burst_Counter ++;
                 zephyrTX.TM();
 
 
                 if (ACK == TM_ack_flag) {
-                    
+
                     zephyrTX.clearTm();
                     ftr.ClearArray(Stokes, RamanLength);
                     ftr.ClearArray(Astokes, RamanLength);
@@ -348,8 +373,7 @@ void StratoDIB::FlightFTR()
             if (EFU_Ready){
 
                 SetAction(BUILD_TELEM);
-                SetAction(LISTEN_EFU); //goes into EFU substate and starts EFU comms
-                inst_substate = FTR_EFU;
+                inst_substate = FTR_EFU_START;
                 log_nominal("Enterering EFU State");
             }
 
@@ -361,7 +385,7 @@ void StratoDIB::FlightFTR()
             }
 
             if(CheckAction(FTR_SCAN)){
-                
+
                 ftr.resetFtrSpi();
 
                 //get raman data and parse to stokes and antistokes arrays
@@ -389,15 +413,15 @@ void StratoDIB::FlightFTR()
                 zephyrTX.addTm(Astokes, RamanLength);
 
                 SetAction(SEND_TELEM);
-                
-            } 
 
-            if(CheckAction(SEND_TELEM)){   
-                
+            }
+
+            if(CheckAction(SEND_TELEM)){
+
                 zephyrTX.TM();
 
                 if (ACK == TM_ack_flag) {
-                    
+
                     zephyrTX.clearTm();
                     ftr.ClearArray(Stokes, RamanLength);
                     ftr.ClearArray(Astokes, RamanLength);
@@ -405,8 +429,8 @@ void StratoDIB::FlightFTR()
                     if(inst_substate == FTR_MEASURE){
                         inst_substate = FTR_ENTRY;
                     }
-                    
-            
+
+
                 } else if (NAK == TM_ack_flag) {
                 // attempt one resend
                     log_debug("NAK resending TM");
@@ -419,7 +443,7 @@ void StratoDIB::FlightFTR()
                         inst_substate = FTR_ENTRY;
                     }
                 }
-    
+
             }
             break;
 
@@ -430,7 +454,7 @@ void StratoDIB::FlightFTR()
             break;
         }
 
-        break;    
+        break;
     case FTR_ERROR_LANDING:
         log_error("Landed in flight error");
         FTR_Off();
@@ -468,6 +492,7 @@ void StratoDIB::FlightFTR()
         log_error("Unknown flight FTR state");
         FTR_Off();
         FiberSwitch_EFU();
+        inst_substate = FTR_ENTRY;
         break;
     }
 }
@@ -593,6 +618,7 @@ void StratoDIB::FlightMCB()
         break;
     default:
         log_error("Unknown flight MCB state");
+        inst_substate = MCB_ENTRY;
         break;
     }
 }
