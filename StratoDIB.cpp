@@ -162,6 +162,7 @@ bool StratoDIB::TCHandler(Telecommand_t telecommand)
     case GOFTRFLIGHT:
         flight_submode = FTR_SUBMODE;
         inst_substate = MODE_ENTRY;
+        scheduler.ClearSchedule();
         ZephyrLogFine("Set flight sub-mode to FTR");
         break;
     case GOMCBFLIGHT:
@@ -171,22 +172,31 @@ bool StratoDIB::TCHandler(Telecommand_t telecommand)
         break;
     case FTRONTIME:
         Measure_Period = dibParam.ftrOnTime;
+        log_debug("TC = FTRONTME");
         break;
     case FTRCYCLETIME:
         Idle_Period = dibParam.ftrCycleTime;
+        log_debug("TC = FTRCYCLETIME");
         break;
     case SETDIBHKPERIOD:
         HK_Loop = dibParam.hkPeriod;
+        log_debug("TC = SETDIBHKPERIOD");
         break;
     case FTRSTATUSLIMIT:
         Stat_Limit = dibParam.statusLimit;
+        log_debug("TC = FTRSTATUSLIMIT");
         break;
     case RAMANLEN:
         RamanLength = dibParam.ramanScanLength;
+        log_debug("TC = RAMANLEN");
         break;
     case SETMEASURETYPE:
         measure_type = dibParam.ftrMeasureType;
-        Burst_Limit = dibParam.ftrBurstLim;
+        log_debug("TC = SETMEASURETYPE");
+            if(measure_type == BURST){
+                Burst_Limit = dibParam.ftrBurstLim;
+                log_debug("Burst Limit Set");
+            }
         break;
     case EXITERROR:
         SetAction(EXIT_ERROR_STATE);
@@ -600,7 +610,7 @@ void StratoDIB::ReadVoltages(){
 
 void StratoDIB::EFUWatch(){
 
-    if(minute()==23){
+    if( (minute()==59) || (minute()==58 && second()>50) ) {
         EFU_Ready = true;
     }
 
@@ -663,7 +673,6 @@ void StratoDIB::XMLHeader(){
 
     ReadFullTemps();
     ReadVoltages();
-
     //float unixtime = now();
 
     String Message = "";
@@ -671,7 +680,7 @@ void StratoDIB::XMLHeader(){
     bool flag2 = true;
 
     /* Check the values for the TM message header */
-    if ((DC_DC_Therm > 60.0) || (DC_DC_Therm < -30.0))
+    if ((SpareTherm > 60.0) || (SpareTherm < -30.0))
         flag1 = false;
     if ((FOTS1Therm > 60.0) || (FOTS1Therm < -30.0))
         flag1 = false;
@@ -682,7 +691,7 @@ void StratoDIB::XMLHeader(){
     /*Check Voltages are in range */
     if ((V_Zephyr > 19.0) || (V_Zephyr < 12.0))
         flag2 = false;
-    if((V_12FTR>13.0) || (V_12FTR<11.5))
+    if((V_3v3>3.6) || (V_3v3<3.0))
         flag2 = false;
 
     //First Field
