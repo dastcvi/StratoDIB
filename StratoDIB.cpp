@@ -82,12 +82,15 @@ void StratoDIB::InstrumentSetup()
 
     efucomm.AssignBinaryRXBuffer(bin_rx, 2048);
     mcbComm.AssignBinaryRXBuffer(binary_mcb, 50);
+
+    HKcounter = millis();
 }
 
 void StratoDIB::InstrumentLoop()
 {
     WatchFlags();
     EFUWatch();
+
 }
 
 
@@ -161,12 +164,14 @@ bool StratoDIB::TCHandler(Telecommand_t telecommand)
     // Non-MCB Telecommands -------------------------------
     case GOFTRFLIGHT:
         flight_submode = FTR_SUBMODE;
+        HKcounter = millis();
         inst_substate = MODE_ENTRY;
         scheduler.ClearSchedule();
         ZephyrLogFine("Set flight sub-mode to FTR");
         break;
     case GOMCBFLIGHT:
         flight_submode = MCB_SUBMODE;
+        FTR_Off();
         inst_substate = MODE_ENTRY;
         ZephyrLogFine("Set flight sub-mode to MCB");
         break;

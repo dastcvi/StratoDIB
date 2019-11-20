@@ -75,9 +75,28 @@ void StratoDIB::FlightMode()
 {
     if (FTR_SUBMODE == flight_submode) {
         FlightFTR();
+        HousekeepingFTR();
     } else {
         FlightMCB();
     }
+}
+
+void StratoDIB::HousekeepingFTR()
+{
+
+    if( (millis()-HKcounter) >= (HK_Loop*1000) ){
+    
+        log_debug("Sending Housekeeping");
+        zephyrTX.clearTm();
+        XMLHeader();
+        zephyrTX.TM();
+        scheduler.AddAction(HOUSEKEEPING, HK_Loop);
+
+        HKcounter = millis();
+
+    }
+
+
 }
 
 void StratoDIB::FlightFTR()
@@ -175,13 +194,13 @@ void StratoDIB::FlightFTR()
             log_nominal("Entering EFU State");
         }
 
-        if (CheckAction(HOUSEKEEPING)){
+/*         if (CheckAction(HOUSEKEEPING)){
             log_debug("Sending Housekeeping");
             zephyrTX.clearTm();
             XMLHeader();
             zephyrTX.TM();
             scheduler.AddAction(HOUSEKEEPING, HK_Loop);
-        }
+        } */
 
         break;
 
@@ -192,15 +211,15 @@ void StratoDIB::FlightFTR()
             log_nominal("Entering EFU State");
         }
 
-        if (CheckAction(HOUSEKEEPING)){
+/*         if (CheckAction(HOUSEKEEPING)){
             log_debug("Sending Housekeeping");
             zephyrTX.clearTm();
             XMLHeader();
             zephyrTX.TM();
             scheduler.AddAction(HOUSEKEEPING, HK_Loop);
-        }
+        } */
 
-        if(CheckAction(IDLE_EXIT)){ //could also use a START MEASURE enum here
+        if(CheckAction(IDLE_EXIT)){
 
             inst_substate = FTR_WARMUP;
             SetAction(POWERON_FTR);
@@ -215,13 +234,13 @@ void StratoDIB::FlightFTR()
             inst_substate = FTR_EFU_START;
         }
 
-        if (CheckAction(HOUSEKEEPING)){
+/*         if (CheckAction(HOUSEKEEPING)){
             log_debug("Sending Housekeeping");
             zephyrTX.clearTm();
             XMLHeader();
             zephyrTX.TM();
             scheduler.AddAction(HOUSEKEEPING, HK_Loop);
-        }
+        } */
 
         if(CheckAction(POWERON_FTR)){
             log_debug("FTR powered on and fiber switched");
@@ -238,20 +257,21 @@ void StratoDIB::FlightFTR()
         if(CheckAction(CONFIGURE_FTR)){
             log_debug("Configuring FTR");
 
-            if(EthernetCount>=10){
-                log_debug("Ethernet Time out - resetting FTR");
-                SetAction(POWERON_FTR);
-            }
-
-            if(ftr.EthernetConnect()){
+            if(ftr.EthernetConnect()){ //replace else if with else
+                
                 scheduler.AddAction(CHECK_FTR_STATUS, Status_Loop);
                 Stat_Counter = 0;
-            }
 
-            else if(!ftr.EthernetConnect()){
+            }else{
                 scheduler.AddAction(CONFIGURE_FTR, 5);
                 log_debug("Attempting to connect Ethernet");
                 EthernetCount++;
+            }
+
+            if(EthernetCount>=10){
+                log_debug("Ethernet Time out - resetting FTR");
+                ZephyrLogWarn("Ethernet Timeout");
+                SetAction(POWERON_FTR);
             }
         }
 
@@ -305,93 +325,70 @@ void StratoDIB::FlightFTR()
 
         switch(measure_type){
 
-        case BURST:
+            case BURST:
 
-            if (EFU_Ready){
+                if (EFU_Ready){
+                    SetAction(BUILD_BURST_TELEM);
+                    inst_substate = FTR_EFU_START;
+                    log_nominal("Entering EFU State");
+                }
 
-                SetAction(BUILD_BURST_TELEM);
-                inst_substate = FTR_EFU_START;
-                log_nominal("Enterering EFU State");
-            }
+                if(CheckAction(FTR_SCAN)){
 
-            if (CheckAction(HOUSEKEEPING)){
-                log_debug("Sending Housekeeping");
-                zephyrTX.clearTm();
-                XMLHeader();
-                zephyrTX.TM();
-                scheduler.AddAction(HOUSEKEEPING, HK_Loop);
-            }
+                    ftr.resetFtrSpi();
 
-            if(CheckAction(FTR_SCAN)){
+                    //get raman data and parse to stokes and antistokes arrays
+                    ftr.readRaman(RamanBin);
+                    ftr.BintoArray(RamanBin, Stokes, Astokes, RamanLength);
+                    ftr.ClearArray(RamanBin, 17000);
 
-                ftr.resetFtrSpi();
+                    //Co-add arrays and keep track of coadd number for each index point
+                    Stokes_Counter += ftr.RamanCoAdd(StokesElements, Stokes, StokesAvg, RamanLength);
+                    ftr.ClearArray(Stokes, RamanLength);
+                    Astokes_Counter += ftr.RamanCoAdd(AstokesElements, Astokes, AStokesAvg, RamanLength);
+                    ftr.ClearArray(Astokes, RamanLength);
 
-                //get raman data and parse to stokes and antistokes arrays
-                ftr.readRaman(RamanBin);
-                ftr.BintoArray(RamanBin, Stokes, Astokes, RamanLength);
-                ftr.ClearArray(RamanBin, 17000);
+                    SetAction(BUILD_BURST_TELEM);
+                }
 
-                //Co-add arrays and keep track of coadd number for each index point
-                Stokes_Counter += ftr.RamanCoAdd(StokesElements, Stokes, StokesAvg, RamanLength);
-                ftr.ClearArray(Stokes, RamanLength);
-                Astokes_Counter += ftr.RamanCoAdd(AstokesElements, Astokes, AStokesAvg, RamanLength);
-                ftr.ClearArray(Astokes, RamanLength);
-
-                SetAction(BUILD_BURST_TELEM);
-            }
-
-            if(CheckAction(BUILD_BURST_TELEM)){
-
-                zephyrTX.clearTm();
-                XMLHeader();
-                ftr.RamanAverage(StokesElements, StokesAvg, Stokes, RamanLength);
-                zephyrTX.addTm(Stokes_Counter);
-                zephyrTX.addTm(Stokes, RamanLength);
-                ftr.RamanAverage(AstokesElements,AStokesAvg, Astokes, RamanLength);
-                zephyrTX.addTm(Astokes_Counter);
-                zephyrTX.addTm(Astokes, RamanLength);
-
-                SetAction(SEND_TELEM);
-
-            }
-
-            if(CheckAction(SEND_TELEM)){
-
-                Burst_Counter ++;
-                zephyrTX.TM();
-
-
-                if (ACK == TM_ack_flag) {
+                if(CheckAction(BUILD_BURST_TELEM)){
 
                     zephyrTX.clearTm();
-                    ftr.ClearArray(Stokes, RamanLength);
-                    ftr.ClearArray(Astokes, RamanLength);
-        
+                    XMLHeader();
+                    ftr.RamanAverage(StokesElements, StokesAvg, Stokes, RamanLength);
+                    zephyrTX.addTm(Stokes_Counter);
+                    zephyrTX.addTm(Stokes, RamanLength);
+                    ftr.RamanAverage(AstokesElements,AStokesAvg, Astokes, RamanLength);
+                    zephyrTX.addTm(Astokes_Counter);
+                    zephyrTX.addTm(Astokes, RamanLength);
 
-                } else if (NAK == TM_ack_flag) {
-                // attempt one resend
-                    log_debug("NAK resending TM");
+                    SetAction(SEND_TELEM);
+
+                }
+
+                if(CheckAction(SEND_TELEM)){
+
+                    Burst_Counter ++;
                     zephyrTX.TM();
                     zephyrTX.clearTm();
                     ftr.ClearArray(Stokes, RamanLength);
                     ftr.ClearArray(Astokes, RamanLength);
-                    
 
-                    // if(inst_substate == FTR_MEASURE){
-                    //     inst_substate = FTR_GPS_WAIT;
-                    // }
+
+                if(EFU_Ready){                   
+                    inst_substate = FTR_EFU_START;
                 }
 
-                if (Burst_Counter >= Burst_Limit) {
-                    if(inst_substate == FTR_MEASURE){
-                         inst_substate = FTR_GPS_WAIT;
-                    }
+                    if (Burst_Counter >= Burst_Limit) {
+                        if(inst_substate == FTR_MEASURE){
+                            inst_substate = FTR_GPS_WAIT;
+                        }
 
-                }else if (Burst_Counter < Burst_Limit) {
-                    scheduler.AddAction(FTR_SCAN, (Scan_Loop+10));
-                }    
-            }
-            break;
+                    }else {
+                        scheduler.AddAction(FTR_SCAN, (Scan_Loop+10));
+                    }    
+                }
+                break;
 
         case AVERAGE:
 
@@ -399,15 +396,7 @@ void StratoDIB::FlightFTR()
 
                 SetAction(BUILD_TELEM);
                 inst_substate = FTR_EFU_START;
-                log_nominal("Enterering EFU State");
-            }
-
-            if (CheckAction(HOUSEKEEPING)){
-                log_debug("Sending Housekeeping");
-                zephyrTX.clearTm();
-                XMLHeader();
-                zephyrTX.TM();
-                scheduler.AddAction(HOUSEKEEPING, HK_Loop);
+                log_nominal("Entering EFU State");
             }
 
             if(CheckAction(FTR_SCAN)){
@@ -446,31 +435,17 @@ void StratoDIB::FlightFTR()
             if(CheckAction(SEND_TELEM)){
 
                 zephyrTX.TM();
+                zephyrTX.clearTm();
+                ftr.ClearArray(Stokes, RamanLength);
+                ftr.ClearArray(Astokes, RamanLength);
 
-                if (ACK == TM_ack_flag) {
-
-                    zephyrTX.clearTm();
-                    ftr.ClearArray(Stokes, RamanLength);
-                    ftr.ClearArray(Astokes, RamanLength);
-
-                    if(inst_substate == FTR_MEASURE){
-                        inst_substate = FTR_GPS_WAIT;
-                    }
-
-
-                } else if (NAK == TM_ack_flag) {
-                // attempt one resend
-                    log_debug("NAK resending TM");
-                    zephyrTX.TM();
-                    zephyrTX.clearTm();
-                    ftr.ClearArray(Stokes, RamanLength);
-                    ftr.ClearArray(Astokes, RamanLength);
-
-                    if(inst_substate == FTR_MEASURE){
-                        inst_substate = FTR_GPS_WAIT;
-                    }
+                if(EFU_Ready){                   
+                    inst_substate = FTR_EFU_START;
                 }
 
+                if(inst_substate == FTR_MEASURE){
+                        inst_substate = FTR_GPS_WAIT;
+                }
             }
             break;
 
@@ -480,6 +455,7 @@ void StratoDIB::FlightFTR()
             inst_substate = FTR_WARMUP;
             break;
         }
+
 
         break;
     case FTR_ERROR_LANDING:

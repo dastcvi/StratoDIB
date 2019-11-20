@@ -142,8 +142,9 @@ private:
     void FTRStatusReport(uint8_t); //sets ftr_status variable based on FTR status byte retrieved with FTR3000 library
 
     void EFUWatch(); //Sets EFU ready flag when predetermined minute is reached
-
+    void HousekeepingFTR();
     //Timing Variables
+    long HKcounter;
     uint16_t Measure_Period = 10*60; //10 minutes nominally
     uint16_t HK_Loop = 120; //number of seconds between idle HK data retreival
     uint16_t Idle_Period = 1*60; //Should be opposite duty cycle of measure period minus Start_EFU_Period telemetry period
