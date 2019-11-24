@@ -494,36 +494,56 @@ void StratoDIB::FTR_Off(){
 }
 
 void StratoDIB::FiberSwitch_EFU(){
-     uint16_t count = 0;
-        digitalWrite(Switch2_EFU,HIGH);
-        while(digitalRead(SwitchStatus_EFU)){
-          delay(1);
-          count++;
-          if(count >= 700){
-                //To do: Send Error message for timeout
-                log_debug("Fiber Switch to EFU NACK");
-                log_error("EFU Switch NACK");
-            break;
-          }
-        }
+    //  uint16_t count = 0;
+    //     digitalWrite(Switch2_EFU,HIGH);
+    //     while(digitalRead(SwitchStatus_EFU)){
+    //       delay(1);
+    //       count++;
+    //       if(count >= 700){
+    //             //To do: Send Error message for timeout
+    //             log_debug("Fiber Switch to EFU NACK");
+    //             log_error("EFU Switch NACK");
+    //         break;
+    //       }
+    //     }
+    //     digitalWrite(Switch2_EFU,LOW);
+
+     digitalWrite(Switch2_EFU,HIGH);
+        delay(20);
         digitalWrite(Switch2_EFU,LOW);
+        delay(10);
+        if(digitalRead(SwitchStatus_EFU) != LOW){
+            log_error("EFU Switch NACK");
+            ZephyrLogCrit("EFU Switch NAK");
+        }
+
 
 }
 
 void StratoDIB::FiberSwitch_FTR(){
-     uint16_t count = 0;
-        digitalWrite(Switch2_FTR,HIGH);
-        while(digitalRead(SwitchStatus_EFU)){
-          delay(1);
-          count++;
-          if(count >= 700){
-                //To do: Send Error message for timeout
-                log_debug("Fiber Switch to FTR NACK");
-                log_error("FTR Switch NACK");
-            break;
-          }
-        }
-        digitalWrite(Switch2_FTR,LOW);
+    //  uint16_t count = 0;
+    //     digitalWrite(Switch2_FTR,HIGH);
+    //     while(digitalRead(SwitchStatus_EFU)){
+    //       delay(1);
+    //       count++;
+    //       if(count >= 700){
+    //             //To do: Send Error message for timeout
+    //             log_debug("Fiber Switch to FTR NACK");
+    //             log_error("FTR Switch NACK");
+    //         break;
+    //       }
+    //     }
+    //     digitalWrite(Switch2_FTR,LOW);
+
+
+    digitalWrite(Switch2_FTR,HIGH);
+    delay(20);
+    digitalWrite(Switch2_FTR,LOW);
+    delay(10);
+    if(digitalRead(SwitchStatus_FTR) != LOW){
+        log_error("FTR Switch NACK");
+        ZephyrLogCrit("FTR Switch NACK");
+    }
 }
 
 void StratoDIB::FTRStatusReport(uint8_t status){
@@ -634,6 +654,7 @@ void StratoDIB::RunEFURouter(){
         } else if (ACK_MESSAGE == EFU_msg) {
 
         } else if (BIN_MESSAGE == EFU_msg) {
+            log_debug("handle EFU Bin");
             HandleEFUBin();
         } else {
             log_error("Unknown message type from EFU");
@@ -646,7 +667,9 @@ void StratoDIB::RunEFURouter(){
 
 void StratoDIB:: HandleEFUBin()
 {
-    if(efucomm.binary_rx.checksum_valid){
+    //if(efucomm.binary_rx.checksum_valid){
+        log_debug("EFU checksum valid");
+        Serial.println(String(efucomm.binary_rx.bin_id));
         switch (efucomm.binary_rx.bin_id) {
         case EFU_DATA_RECORD:
             EFU_Received = 1;
@@ -656,7 +679,11 @@ void StratoDIB:: HandleEFUBin()
             log_error("Unknown EFU bin received");
             break;
         }
-    }
+    //}
+
+    //else{
+    //     log_debug("EFU checksum  not valid");
+    //}
 }
 
 void StratoDIB::AddEFUTM()

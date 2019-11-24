@@ -24,7 +24,7 @@
 
 // Fiber Optic Switch Digital Pins
 #define Switch2_EFU      3 //High
-#define Switch2_FTR      4
+#define Switch2_FTR      2
 #define SwitchStatus_EFU 5
 #define SwitchStatus_FTR 4
 

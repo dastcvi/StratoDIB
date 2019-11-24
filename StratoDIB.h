@@ -182,7 +182,7 @@ private:
     float V_12FTR;
 
     //FTR Arrays
-    uint16_t RamanLength = 1850;
+    uint16_t RamanLength = 1750;
     byte RamanBin[17000]; //Binary array that contains raw FTR scan
     uint16_t Stokes[2200]; //instant stokes scan from RamanBin
     uint16_t Astokes[2200]; //instant antistokes scan from RamanBin

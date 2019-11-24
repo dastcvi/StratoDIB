@@ -90,7 +90,7 @@ void StratoDIB::HousekeepingFTR()
         zephyrTX.clearTm();
         XMLHeader();
         zephyrTX.TM();
-        scheduler.AddAction(HOUSEKEEPING, HK_Loop);
+       // scheduler.AddAction(HOUSEKEEPING, HK_Loop);
 
         HKcounter = millis();
 
@@ -135,6 +135,7 @@ void StratoDIB::FlightFTR()
     case FTR_EFU:
         // if the EFURouter found a packet, send it as a TM
         if (EFU_Received) {
+            log_debug("building EFU TM");
             zephyrTX.clearTm();
             AddEFUTM();
             zephyrTX.setStateFlagValue(1, FINE);
